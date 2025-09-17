@@ -13,7 +13,6 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GAR_LOCATION: asia-south1
   SERVICE: legal-backend
   REGION: asia-south1
 
@@ -58,7 +57,7 @@ jobs:
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          # Using Google Container Registry (gcr.io) as we've been using
+          # Using Google Container Registry (gcr.io) which we know works
           image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       # If required, use the Cloud Run url output in later steps
