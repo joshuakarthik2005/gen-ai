@@ -19,6 +19,9 @@ env:
   REPOSITORY: legal-backend
   IMAGE_NAME: legal-backend
   REGION: asia-south1
+  # Optional: set this in GitHub Secrets to skip project-number lookup.
+  # e.g. demystifier-ai default compute SA: 144935064473-compute@developer.gserviceaccount.com
+  RUNTIME_SA: ${{ secrets.GCP_RUNTIME_SA }}
 
 jobs:
   deploy:
@@ -42,6 +45,7 @@ jobs:
         uses: 'google-github-actions/setup-gcloud@v2'
 
       - name: Resolve Project Number and Runtime SA
+        if: ${{ env.RUNTIME_SA == '' }}
         run: |-
           PN=$(gcloud projects describe ${{ env.PROJECT_ID }} --format='value(projectNumber)')
           echo "PROJECT_NUMBER=$PN"
@@ -57,7 +61,6 @@ jobs:
           echo "SERVICE=${{ env.SERVICE }}"
           echo "REPOSITORY=${{ env.REPOSITORY }}"
           echo "IMAGE_NAME=${{ env.IMAGE_NAME }}"
-          echo "PROJECT_NUMBER=${{ env.PROJECT_NUMBER }}"
           echo "RUNTIME_SA=${{ env.RUNTIME_SA }}"
           if [ -z "${{ env.PROJECT_ID }}" ]; then
             echo "ERROR: PROJECT_ID is empty. Set the repo secret GCP_PROJECT_ID to your GCP project (e.g., demystifier-ai)." >&2
