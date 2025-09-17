@@ -1,5 +1,13 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-google-cloud-aiplatform==1.38.1
-python-multipart==0.0.6
-requests==2.31.0
+# Legal Document Demystifier Backend Requirements
+# Cloud Run deployment tested and working configuration
+
+# Web framework and API dependencies
+fastapi==0.104.1                   # Modern, fast web framework for building APIs
+uvicorn[standard]==0.24.0          # ASGI server for running FastAPI applications  
+python-multipart==0.0.6           # Required for handling file uploads in FastAPI
+
+# Google Cloud AI dependencies (tested working versions)
+google-cloud-aiplatform==1.38.1   # Vertex AI platform client library
+
+# HTTP client library
+requests==2.31.0                   # HTTP library for making API requests
