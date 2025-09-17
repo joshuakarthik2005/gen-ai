@@ -16,6 +16,8 @@ env:
   GAR_LOCATION: asia-south1
   GAR_HOST: asia-south1-docker.pkg.dev
   SERVICE: legal-backend
+  REPOSITORY: legal-backend
+  IMAGE_NAME: legal-backend
   REGION: asia-south1
 
 jobs:
@@ -39,25 +41,39 @@ jobs:
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@v2'
 
+      - name: Validate configuration
+        run: |-
+          echo "GAR_HOST=${{ env.GAR_HOST }}"
+          echo "GAR_LOCATION=${{ env.GAR_LOCATION }}"
+          echo "PROJECT_ID=${{ env.PROJECT_ID }}"
+          echo "SERVICE=${{ env.SERVICE }}"
+          echo "REPOSITORY=${{ env.REPOSITORY }}"
+          echo "IMAGE_NAME=${{ env.IMAGE_NAME }}"
+          if [ -z "${{ env.PROJECT_ID }}" ]; then
+            echo "ERROR: PROJECT_ID is empty. Set the repo secret GCP_PROJECT_ID to your GCP project (e.g., demystifier-ai)." >&2
+            exit 1
+          fi
+
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.GAR_HOST }}
 
       # Step 1: Ensure the AR repository exists
       - name: Create Artifact Registry Repository
         run: |-
-          gcloud artifacts repositories create ${{ env.SERVICE }} \
+          gcloud artifacts repositories create ${{ env.REPOSITORY }} \
             --repository-format=docker \
             --location=${{ env.GAR_LOCATION }} \
-            --description="Docker repository for legal-backend" || echo "Repository may already exist"
+            --description="Docker repository for ${{ env.REPOSITORY }}" || echo "Repository may already exist"
 
       # Step 2: Build and Push Container (FIX APPLIED)
       - name: Build and Push Container
         # Define the full image URL once, locally within this step
         env:
-          IMAGE_URL: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+          IMAGE_URL: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
         run: |-
           cd backend
-          # Build: Use the clean variable
+          echo "IMAGE_URL=$IMAGE_URL"
+          # Build: Use the clean variable (must be HOST/PROJECT/REPOSITORY/IMAGE:TAG)
           docker build -t $IMAGE_URL .
           # Push: Use the clean variable. This fixes the "Missing image name" error.
           docker push $IMAGE_URL
@@ -70,7 +86,7 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           # Use the same logic to reference the image URL
-          image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+          image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           
       # Step 4: Show Output
       - name: Show Output
