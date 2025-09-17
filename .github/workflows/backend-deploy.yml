@@ -1,75 +1,139 @@
 name: Deploy Backend to Cloud Run
 
+
+
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-deploy.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'backend/**'
+
+  push:
+
+    branches: [ main ]
+
+    paths:
+
+      - 'backend/**'
+
+      - '.github/workflows/backend-deploy.yml'
+
+  pull_request:
+
+    branches: [ main ]
+
+    paths:
+
+      - 'backend/**'
+
+
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GAR_LOCATION: asia-south1
-  GAR_HOST: asia-south1-docker.pkg.dev
-  SERVICE: legal-backend
-  REGION: asia-south1
+
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+  GAR_LOCATION: asia-south1
+
+  GAR_HOST: asia-south1-docker.pkg.dev
+
+  SERVICE: legal-backend
+
+  REGION: asia-south1
+
+
 
 jobs:
-  deploy:
-    permissions:
-      contents: read
-      id-token: write
 
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  deploy:
 
-      - name: Google Auth
-        id: auth
-        uses: 'google-github-actions/auth@v2'
-        with:
-          workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
-          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+    permissions:
 
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v2'
+      contents: read
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.GAR_HOST }}
+      id-token: write
 
-      - name: Create Artifact Registry Repository
-        run: |-
-          gcloud artifacts repositories create ${{ env.SERVICE }} \
-            --repository-format=docker \
-            --location=${{ env.GAR_LOCATION }} \
-            --description="Docker repository for legal-backend" || echo "Repository may already exist"
-      - name: Build and Push Container
-        env:
-          IMAGE_URL: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-        run: |-
-          cd backend
-          echo "PROJECT_ID: ${{ env.PROJECT_ID }}"
-          echo "IMAGE_URL: $IMAGE_URL"
-          docker build -t $IMAGE_URL .
-          echo "Pushing image: $IMAGE_URL"
-          docker push $IMAGE_URL
-          
-      - name: Deploy to Cloud Run
-        id: deploy
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: ${{ env.SERVICE }}
-          region: ${{ env.REGION }}
-          image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
-      - name: Show Output
-        run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
 
-      - name: Test Deployment
-        run: |-
-          curl -fsS ${{ steps.deploy.outputs.url }}/health
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+
+        uses: actions/checkout@v4
+
+
+
+      - name: Google Auth
+
+        id: auth
+
+        uses: 'google-github-actions/auth@v2'
+
+        with:
+
+          workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
+
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+
+
+      - name: 'Set up Cloud SDK'
+
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+
+
+      - name: Configure Docker for Artifact Registry
+
+        run: gcloud auth configure-docker ${{ env.GAR_HOST }}
+
+
+
+      - name: Create Artifact Registry Repository
+
+        run: |-
+
+          gcloud artifacts repositories create ${{ env.SERVICE }} \
+
+            --repository-format=docker \
+
+            --location=${{ env.GAR_LOCATION }} \
+
+            --description="Docker repository for legal-backend" || echo "Repository may already exist"
+
+      - name: Build and Push Container
+
+        run: |-
+
+          cd backend
+
+          docker build -t "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
+
+          docker push "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
+
+         
+
+      - name: Deploy to Cloud Run
+
+        id: deploy
+
+        uses: google-github-actions/deploy-cloudrun@v2
+
+        with:
+
+          service: ${{ env.SERVICE }}
+
+          region: ${{ env.REGION }}
+
+          image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+
+
+
+      - name: Show Output
+
+        run: echo "Cloud Run Service URL:${{ steps.deploy.outputs.url }}"
+
+
+
+      - name: Test Deployment
+
+        run: |-
+
+          curl -fsS ${{ steps.deploy.outputs.url }}/health
