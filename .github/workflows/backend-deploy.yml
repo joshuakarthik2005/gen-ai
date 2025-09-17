@@ -64,7 +64,7 @@ jobs:
           image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Show Output
-        run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
+        run: echo "Cloud Run Service URL:${{ steps.deploy.outputs.url }}"
 
       - name: Test Deployment
         run: |-
