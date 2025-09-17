@@ -293,7 +293,7 @@ async def upload_document(file: UploadFile = File(...)):
             )
         
         # Google Cloud Storage configuration
-        bucket_name = "clarirylegal-documents"  # Change to your bucket name
+        bucket_name = "demystifier-ai_cloudbuild"  # Updated to use existing bucket
         
         try:
             # Initialize GCS client

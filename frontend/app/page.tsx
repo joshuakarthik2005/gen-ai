@@ -29,12 +29,20 @@ export default function Dashboard() {
           <div className="h-full flex gap-6 p-6">
             {/* Left Column - Document Viewer (28%) */}
             <div className="w-[28%] min-w-[350px] h-full">
-              <DocumentViewer onExplainText={handleExplainText} />
+              <DocumentViewer 
+                documentUrl="/sample_employment_agreement.txt"
+                filename="Sample Employment Agreement"
+                onExplainText={handleExplainText} 
+              />
             </div>
 
             {/* Center Column - Analysis Panel (47%) */}
             <div className="w-[47%] min-w-[450px] h-full">
-              <AnalysisPanel />
+              <AnalysisPanel 
+                documentAnalysis={null}
+                isLoading={false}
+                filename="Sample Employment Agreement"
+              />
             </div>
 
             {/* Right Column - Chat Interface (25%) */}

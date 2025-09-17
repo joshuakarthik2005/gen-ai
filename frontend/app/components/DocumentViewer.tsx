@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ZoomIn, ZoomOut, RotateCw, Download, FileText } from "lucide-react";
+import { Document, Page, pdfjs } from "react-pdf";
+import { ZoomIn, ZoomOut, RotateCw, Download, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 interface ExplainTooltipProps {
   x: number;
@@ -46,55 +50,31 @@ function ExplainTooltip({ x, y, selectedText, onExplain, onClose }: ExplainToolt
 }
 
 interface DocumentViewerProps {
+  documentUrl: string;
+  filename: string;
   onExplainText: (text: string) => void;
 }
 
-export default function DocumentViewer({ onExplainText }: DocumentViewerProps) {
-  const [zoom, setZoom] = useState(100);
+export default function DocumentViewer({ documentUrl, filename, onExplainText }: DocumentViewerProps) {
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedText, setSelectedText] = useState("");
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  const [isAdobeLoaded, setIsAdobeLoaded] = useState(false);
-  const viewerRef = useRef<HTMLDivElement>(null);
-  const adobeViewerRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Adobe PDF Embed API configuration
-  const ADOBE_API_KEY = "42dca80537eb431cad94af71101d769d";
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+    setLoading(false);
+  }
 
-  useEffect(() => {
-    // Load Adobe PDF Embed API
-    const script = document.createElement('script');
-    script.src = 'https://documentservices.adobe.com/view-sdk/viewer.js';
-    script.onload = () => {
-      setIsAdobeLoaded(true);
-      initializeAdobePDF();
-    };
-    document.head.appendChild(script);
-
-    return () => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
-  }, []);
-
-  const initializeAdobePDF = () => {
-    if (typeof window !== 'undefined' && (window as any).AdobeDC && viewerRef.current) {
-      const adobeDCView = new (window as any).AdobeDC.View({
-        clientId: ADOBE_API_KEY,
-        divId: "adobe-dc-view",
-      });
-
-      // You can load a PDF from URL or file
-      // For demo purposes, we'll show the fallback document viewer
-      // In production, you would call:
-      // adobeDCView.previewFile({
-      //   content: {location: {url: "path/to/your/document.pdf"}},
-      //   metaData: {fileName: "employment_agreement.pdf"}
-      // });
-      
-      adobeViewerRef.current = adobeDCView;
-    }
-  };
+  function onDocumentLoadError(error: Error) {
+    console.error('Error loading PDF:', error);
+    setError('Failed to load PDF document');
+    setLoading(false);
+  }
 
   const handleTextSelection = () => {
     const selection = window.getSelection();
@@ -116,43 +96,16 @@ export default function DocumentViewer({ onExplainText }: DocumentViewerProps) {
     window.getSelection()?.removeAllRanges();
   };
 
-  // Sample document content for demonstration
-  const sampleDocument = `EMPLOYMENT AGREEMENT
+  const changePage = (offset: number) => {
+    setPageNumber(prevPageNumber => {
+      const newPageNumber = prevPageNumber + offset;
+      return Math.min(Math.max(1, newPageNumber), numPages);
+    });
+  };
 
-This Employment Agreement ("Agreement") is entered into on March 15, 2024 between TechCorp Inc., a corporation organized under the laws of Delaware ("Company"), and Sarah Chen ("Employee").
-
-1. EMPLOYMENT AND DUTIES
-Company agrees to employ Employee, and Employee agrees to be employed by Company, as Senior Software Engineer. Employee shall perform such duties and responsibilities as may be assigned by Company's management, consistent with Employee's position.
-
-2. COMPENSATION
-Company shall pay Employee a base salary of $120,000 per year, payable in accordance with Company's standard payroll practices. Employee may be eligible for bonuses and other compensation as determined by Company in its sole discretion.
-
-3. BENEFITS
-Employee shall be entitled to participate in Company's employee benefit plans, including health insurance, retirement plans, and paid time off, subject to the terms and conditions of such plans.
-
-4. CONFIDENTIALITY
-Employee acknowledges that during employment, Employee may have access to confidential information belonging to Company. Employee agrees to maintain the confidentiality of such information and not to disclose it to any third party without Company's written consent.
-
-5. NON-COMPETE
-During employment and for a period of twelve (12) months following termination of employment for any reason, Employee agrees not to directly or indirectly compete with Company's business within a radius of fifty (50) miles from Company's principal place of business.
-
-6. TERMINATION
-Either party may terminate this Agreement at any time, with or without cause, upon thirty (30) days' written notice to the other party. Company may terminate Employee's employment immediately for cause, including but not limited to misconduct, breach of this Agreement, or violation of Company policies.
-
-7. RETURN OF PROPERTY
-Upon termination of employment, Employee agrees to return all Company property, including but not limited to documents, equipment, and confidential information.
-
-8. GOVERNING LAW
-This Agreement shall be governed by and construed in accordance with the laws of Delaware, without regard to its conflict of laws principles.
-
-IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.
-
-TechCorp Inc.                    Sarah Chen
-
-By: _________________________    _________________________
-Name: Michael Johnson            Sarah Chen  
-Title: CEO
-Date: March 15, 2024           Date: March 15, 2024`;
+  const changeScale = (newScale: number) => {
+    setScale(Math.min(Math.max(0.5, newScale), 3.0));
+  };
 
   return (
     <div className="h-full flex flex-col bg-white border border-gray-200 rounded-lg shadow-card overflow-hidden">
@@ -162,24 +115,56 @@ Date: March 15, 2024           Date: March 15, 2024`;
           <div className="flex items-center space-x-3">
             <FileText className="w-4 h-4 text-primary-blue" />
             <div>
-              <span className="text-sm font-medium text-gray-900">employment_agreement.pdf</span>
-              <div className="text-xs text-gray-500">Page 1 of 2 • 2.3 MB</div>
+              <span className="text-sm font-medium text-gray-900">{filename}</span>
+              {numPages > 0 && (
+                <div className="text-xs text-gray-500">
+                  Page {pageNumber} of {numPages}
+                </div>
+              )}
             </div>
           </div>
           
           <div className="flex items-center space-x-1">
+            {/* Page Navigation */}
+            {numPages > 1 && (
+              <>
+                <button
+                  onClick={() => changePage(-1)}
+                  disabled={pageNumber <= 1}
+                  className="p-2 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-600 group-hover:text-gray-800" />
+                </button>
+                
+                <button
+                  onClick={() => changePage(1)}
+                  disabled={pageNumber >= numPages}
+                  className="p-2 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-800" />
+                </button>
+                
+                <div className="w-px h-4 bg-gray-300 mx-2" />
+              </>
+            )}
+
+            {/* Zoom Controls */}
             <button
-              onClick={() => setZoom(Math.max(50, zoom - 25))}
+              onClick={() => changeScale(scale - 0.25)}
               className="p-2 hover:bg-gray-200 rounded-md transition-colors group"
               title="Zoom out"
             >
               <ZoomOut className="w-4 h-4 text-gray-600 group-hover:text-gray-800" />
             </button>
             
-            <span className="text-sm text-gray-600 min-w-[3rem] text-center font-medium">{zoom}%</span>
+            <span className="text-sm text-gray-600 min-w-[3rem] text-center font-medium">
+              {Math.round(scale * 100)}%
+            </span>
             
             <button
-              onClick={() => setZoom(Math.min(200, zoom + 25))}
+              onClick={() => changeScale(scale + 0.25)}
               className="p-2 hover:bg-gray-200 rounded-md transition-colors group"
               title="Zoom in"
             >
@@ -188,59 +173,64 @@ Date: March 15, 2024           Date: March 15, 2024`;
             
             <div className="w-px h-4 bg-gray-300 mx-2" />
             
-            <button className="p-2 hover:bg-gray-200 rounded-md transition-colors group" title="Rotate">
-              <RotateCw className="w-4 h-4 text-gray-600 group-hover:text-gray-800" />
-            </button>
-            
-            <button className="p-2 hover:bg-gray-200 rounded-md transition-colors group" title="Download">
+            <button 
+              className="p-2 hover:bg-gray-200 rounded-md transition-colors group" 
+              title="Download"
+              onClick={() => window.open(documentUrl, '_blank')}
+            >
               <Download className="w-4 h-4 text-gray-600 group-hover:text-gray-800" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Adobe PDF Viewer Container */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Adobe PDF Embed API Container */}
-        <div 
-          id="adobe-dc-view" 
-          ref={viewerRef}
-          className="w-full h-full"
-          style={{ display: isAdobeLoaded ? 'block' : 'none' }}
-        />
-        
-        {/* Fallback Document Content */}
-        {!isAdobeLoaded && (
-          <div className="w-full h-full overflow-auto">
-            <div className="p-6 bg-white">
-              <div 
-                className="max-w-none mx-auto bg-white text-gray-900 leading-relaxed select-text shadow-sm border border-gray-100 rounded-lg p-8"
-                style={{ 
-                  fontSize: `${zoom}%`,
-                  fontFamily: 'Georgia, serif',
-                  lineHeight: '1.8',
-                  maxWidth: '8.5in',
-                  minHeight: '11in'
-                }}
-                onMouseUp={handleTextSelection}
-              >
-                <pre className="whitespace-pre-wrap font-serif text-sm">
-                  {sampleDocument}
-                </pre>
+      {/* Document Content */}
+      <div className="flex-1 overflow-auto bg-gray-100" ref={containerRef}>
+        <div className="flex justify-center py-6">
+          {loading && (
+            <div className="flex items-center justify-center h-96">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-sm text-gray-600">Loading PDF...</p>
               </div>
             </div>
-          </div>
-        )}
-        
-        {/* Loading state for Adobe PDF */}
-        {!isAdobeLoaded && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-              <p className="text-sm text-gray-600">Loading Adobe PDF Viewer...</p>
+          )}
+
+          {error && (
+            <div className="flex items-center justify-center h-96">
+              <div className="text-center text-red-600">
+                <p className="font-medium">Error loading PDF</p>
+                <p className="text-sm mt-1">{error}</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {!loading && !error && (
+            <div 
+              className="shadow-lg bg-white" 
+              onMouseUp={handleTextSelection}
+              style={{ userSelect: 'text' }}
+            >
+              <Document
+                file={documentUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
+                loading={
+                  <div className="flex items-center justify-center h-96">
+                    <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                }
+              >
+                <Page 
+                  pageNumber={pageNumber} 
+                  scale={scale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={false}
+                />
+              </Document>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Explain Tooltip */}
