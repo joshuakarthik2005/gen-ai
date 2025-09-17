@@ -1,0 +1,31 @@
+# Legal Document Demystifier Backend Requirements
+# Install with: pip install -r requirements.txt
+
+# Core Google Cloud and AI dependencies
+google-cloud-aiplatform>=1.38.0    # Vertex AI platform client library
+vertexai>=1.38.0                   # Vertex AI generative models
+
+# Web framework and API dependencies
+fastapi>=0.104.1                   # Modern, fast web framework for building APIs
+uvicorn[standard]>=0.24.0          # ASGI server for running FastAPI applications
+python-multipart>=0.0.6           # Required for handling file uploads in FastAPI
+
+# HTTP client library for testing
+requests>=2.31.0                   # HTTP library for making API requests
+
+# Optional: Enhanced logging and monitoring
+python-json-logger>=2.0.7         # JSON formatter for structured logging
+
+# Optional: Environment variable management
+python-dotenv>=1.0.0               # Load environment variables from .env files
+
+# Optional: Type checking and development tools (uncomment if needed)
+# mypy>=1.7.0                      # Static type checker
+# black>=23.11.0                   # Code formatter
+# flake8>=6.1.0                    # Linting tool
+# pytest>=7.4.3                    # Testing framework
+# pytest-asyncio>=0.21.1           # Async support for pytest
+
+# Optional: Production deployment (uncomment if needed)
+# gunicorn>=21.2.0                 # WSGI HTTP Server for production
+# prometheus-client>=0.19.0        # Metrics collection for monitoring
