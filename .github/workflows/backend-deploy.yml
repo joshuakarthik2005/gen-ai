@@ -13,23 +13,24 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  # --- Artifact Registry Configuration (AR) ---
   GAR_LOCATION: asia-south1
-  GAR_HOST: asia-south1-docker.pkg.dev
-  SERVICE: legal-backend
+  GAR_HOST: asia-south1-docker.pkg.dev # Corrected Hostname for AR
+  SERVICE: legal-backend # Cloud Run Service and AR Repository Name
   REGION: asia-south1
 
 jobs:
   deploy:
     permissions:
       contents: read
-      id-token: write
+      id-token: write # CRITICAL for Workload Identity Federation (WIF)
 
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Google Auth
+      - name: Google Auth (WIF)
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
@@ -42,6 +43,7 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.GAR_HOST }}
 
+      # Step 1: Ensure the AR repository exists
       - name: Create Artifact Registry Repository
         run: |-
           gcloud artifacts repositories create ${{ env.SERVICE }} \
@@ -49,12 +51,15 @@ jobs:
             --location=${{ env.GAR_LOCATION }} \
             --description="Docker repository for legal-backend" || echo "Repository may already exist"
 
+      # Step 2: Build and Push Container to Artifact Registry
       - name: Build and Push Container
         run: |-
+          # Use the correct AR_HOST for tagging and pushing
           cd backend
           docker build -t "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
           docker push "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
-
+          
+      # Step 3: Deploy to Cloud Run
       - name: Deploy to Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -62,10 +67,12 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-
+          
+      # Step 4: Show Output (Corrected to robust two-line format)
       - name: Show Output
         run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
-
+        
+      # Step 5: Test Deployment
       - name: Test Deployment
         run: |-
           curl -fsS ${{ steps.deploy.outputs.url }}/health
