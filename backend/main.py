@@ -1,6 +1,7 @@
 """
 Legal Document Demystifier - FastAPI Application
 Provides a REST API for analyzing legal documents using Google's Gemini model
+Version: 1.1.0 - GitHub Actions Integration
 """
 
 import os
