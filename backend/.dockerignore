@@ -1,0 +1,26 @@
+# Ignore sensitive files
+service-account-key.json
+*.env
+.env.*
+
+# Ignore development files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.git/
+.gitignore
+README.md
+SETUP.md
+
+# Ignore test files
+test_client.py
+check_models.py
+enable_apis.sh
+sample_employment_agreement.txt
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
