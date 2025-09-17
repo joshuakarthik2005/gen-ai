@@ -74,7 +74,7 @@ jobs:
           
       # Step 4: Show Output
       - name: Show Output
-        run:  echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
+        run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
         
       # Step 5: Test Deployment
       - name: Test Deployment
