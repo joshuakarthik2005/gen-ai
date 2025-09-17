@@ -49,10 +49,15 @@ jobs:
             --location=${{ env.GAR_LOCATION }} \
             --description="Docker repository for legal-backend" || echo "Repository may already exist"
       - name: Build and Push Container
+        env:
+          IMAGE_URL: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         run: |-
           cd backend
-          docker build -t "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
-          docker push "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
+          echo "PROJECT_ID: ${{ env.PROJECT_ID }}"
+          echo "IMAGE_URL: $IMAGE_URL"
+          docker build -t $IMAGE_URL .
+          echo "Pushing image: $IMAGE_URL"
+          docker push $IMAGE_URL
           
       - name: Deploy to Cloud Run
         id: deploy
@@ -63,7 +68,7 @@ jobs:
           image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Show Output
-        run: echo "Cloud Run Service URL:${{ steps.deploy.outputs.url }}"
+        run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
 
       - name: Test Deployment
         run: |-
