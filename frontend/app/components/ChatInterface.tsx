@@ -12,9 +12,10 @@ interface Message {
 
 interface ChatInterfaceProps {
   explainedText?: string;
+  documentUrl?: string;
 }
 
-export default function ChatInterface({ explainedText }: ChatInterfaceProps) {
+export default function ChatInterface({ explainedText, documentUrl }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -31,23 +32,64 @@ export default function ChatInterface({ explainedText }: ChatInterfaceProps) {
   // Handle explained text from document viewer
   useEffect(() => {
     if (explainedText) {
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        type: 'user',
-        content: `Please explain this clause: "${explainedText}"`,
-        timestamp: new Date()
-      };
+      handleExplainTextRequest(explainedText);
+    }
+  }, [explainedText]);
+
+  // Function to handle text explanation requests
+  const handleExplainTextRequest = async (text: string) => {
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: `Please explain this clause: "${text}"`,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('https://legal-backend-144935064473.asia-south1.run.app/explain-selection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          text: text,
+          document_context: documentUrl || "legal document"
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get explanation');
+      }
+
+      const data = await response.json();
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: getExplanationForText(explainedText),
+        content: data.explanation || getExplanationForText(text),
         timestamp: new Date()
       };
 
-      setMessages(prev => [...prev, userMessage, assistantMessage]);
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Error explaining text:', error);
+      
+      // Fallback to mock explanation
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: getExplanationForText(text),
+        timestamp: new Date()
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } finally {
+      setIsLoading(false);
     }
-  }, [explainedText]);
+  };
 
   // Mock AI response generator
   const getExplanationForText = (text: string): string => {

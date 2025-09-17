@@ -3,17 +3,32 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, FileText, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import DocumentDashboard from "./DocumentDashboard";
 
 interface DocumentUploaderProps {
-  onUploadSuccess: (signedUrl: string, filename: string) => void;
+  onUploadSuccess?: (signedUrl: string, filename: string) => void;
 }
 
 export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadedDocument, setUploadedDocument] = useState<{
+    url: string;
+    filename: string;
+  } | null>(null);
   const [uploadStatus, setUploadStatus] = useState<{
     type: 'success' | 'error' | null;
     message: string;
   }>({ type: null, message: '' });
+
+  // If document is uploaded, show the dashboard
+  if (uploadedDocument) {
+    return (
+      <DocumentDashboard 
+        documentUrl={uploadedDocument.url}
+        filename={uploadedDocument.filename}
+      />
+    );
+  }
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -26,7 +41,7 @@ export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderPr
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('http://127.0.0.1:8000/upload-document', {
+      const response = await fetch('https://legal-backend-144935064473.asia-south1.run.app/upload-document', {
         method: 'POST',
         body: formData,
       });
@@ -43,8 +58,14 @@ export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderPr
         message: `Successfully uploaded ${file.name}`
       });
 
-      // Call the success callback with the signed URL
-      onUploadSuccess(data.signed_url, file.name);
+      // Set uploaded document to trigger dashboard view
+      setUploadedDocument({
+        url: data.signed_url,
+        filename: file.name
+      });
+
+      // Call optional callback
+      onUploadSuccess?.(data.signed_url, file.name);
 
     } catch (error) {
       console.error('Upload error:', error);
