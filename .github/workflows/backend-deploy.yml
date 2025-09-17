@@ -1,6 +1,5 @@
 name: Deploy Backend to Cloud Run
 
-# 1. TRiggers: Run on push to main branch or on pull requests affecting the backend folder
 on:
   push:
     branches: [ main ]
@@ -13,29 +12,23 @@ on:
       - 'backend/**'
 
 env:
-  # GCP Secrets set in GitHub Repository Settings
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  
-  # Environment Variables (CHANGE THESE IF YOUR REGION IS DIFFERENT)
   GAR_LOCATION: asia-south1
-  GAR_HOST: asia-south1-docker.pkg.dev # Artifact Registry Hostname (Corrected)
-  SERVICE: legal-backend # Cloud Run Service Name (Matches your Artifact Registry Repo Name)
-  REGION: asia-south1 # Cloud Run Deployment Region
+  GAR_HOST: asia-south1-docker.pkg.dev
+  SERVICE: legal-backend
+  REGION: asia-south1
 
 jobs:
   deploy:
-    # 2. WIF Permissions: Required for the google-github-actions/auth step
     permissions:
       contents: read
-      id-token: write # CRITICAL: Allows token exchange for WIF
+      id-token: write
 
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout the code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Step 2: Authenticate to Google Cloud using WIF (Keyless Auth)
       - name: Google Auth
         id: auth
         uses: 'google-github-actions/auth@v2'
@@ -43,41 +36,36 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
           service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
-      # Step 3: Set up the gcloud SDK environment
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@v2'
 
-      # Step 4: Configure Docker to use gcloud credentials for Artifact Registry
-      - name: Configure Docker to use gcloud as a credential helper
+      - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.GAR_HOST }}
 
-      # Step 5: Build and Push Container to Artifact Registry
+      - name: Create Artifact Registry Repository
+        run: |-
+          gcloud artifacts repositories create ${{ env.SERVICE }} \
+            --repository-format=docker \
+            --location=${{ env.GAR_LOCATION }} \
+            --description="Docker repository for legal-backend" || echo "Repository may already exist"
+
       - name: Build and Push Container
         run: |-
-          # Change directory to where your Dockerfile (for the backend) is located
           cd backend
-          # Build: Use the correct Artifact Registry Host for the tag
           docker build -t "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
-          # Push: Push the tagged image to Artifact Registry
           docker push "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
 
-      # Step 6: Deploy to Cloud Run
       - name: Deploy to Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          # Use the image URL from Artifact Registry
           image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-          # Recommended flags
-          # --no-allow-unauthenticated # Uncomment this line for production security
 
-      # Step 7: Output the service URL and perform a quick health check
       - name: Show Output
         run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
 
       - name: Test Deployment
         run: |-
-          # Replace /health with your actual health check endpoint if different
           curl -fsS ${{ steps.deploy.outputs.url }}/health
