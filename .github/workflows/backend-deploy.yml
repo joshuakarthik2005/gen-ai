@@ -52,7 +52,9 @@ jobs:
       - name: Build and Push Container
         run: |-
           cd backend
+          echo "Building image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
           docker build -t "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
+          echo "Pushing image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
           docker push "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
           
       - name: Deploy to Cloud Run
@@ -64,7 +66,7 @@ jobs:
           image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Show Output
-        run: echo "Cloud Run Service URL:${{ steps.deploy.outputs.url }}"
+        run: echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
 
       - name: Test Deployment
         run: |-
