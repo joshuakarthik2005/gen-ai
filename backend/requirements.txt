@@ -8,6 +8,8 @@ python-multipart==0.0.6           # Required for handling file uploads in FastAP
 
 # Google Cloud AI dependencies (tested working versions)
 google-cloud-aiplatform==1.38.1   # Vertex AI platform client library
+grpcio==1.65.5                    # Pin grpcio to avoid conflicts
+grpcio-status==1.65.5             # Pin grpcio-status to match grpcio version
 
 # HTTP client library
 requests==2.31.0                   # HTTP library for making API requests
