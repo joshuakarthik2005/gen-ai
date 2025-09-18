@@ -60,10 +60,10 @@ def initialize_vertex_ai():
     global vertex_ai_initialized, model
     
     try:
-        # Set up authentication using the service account key
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account-key.json"
+        # For Cloud Run, don't set GOOGLE_APPLICATION_CREDENTIALS
+        # Cloud Run automatically provides service account authentication
         
-        # Project settings from the service account
+        # Project settings
         project_id = "demystifier-ai"
         location = "asia-south1"  # Mumbai region works for India users!
         
@@ -411,12 +411,17 @@ def generate_mock_explanation(text: str) -> str:
 if __name__ == "__main__":
     import uvicorn
     
-    # Initialize Vertex AI on startup
-    logger.info("Starting Legal Document Demystifier API...")
-    initialize_vertex_ai()
-    
     # Get port from environment variable (Cloud Run provides this)
     port = int(os.environ.get("PORT", 8000))
+    
+    logger.info(f"Starting Legal Document Demystifier API on port {port}...")
+    
+    # Try to initialize Vertex AI but don't block startup
+    try:
+        initialize_vertex_ai()
+        logger.info("Vertex AI initialized successfully")
+    except Exception as e:
+        logger.warning(f"Vertex AI initialization failed (will retry on first request): {e}")
     
     # Run the application
     uvicorn.run(
