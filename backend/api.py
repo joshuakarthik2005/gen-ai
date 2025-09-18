@@ -415,10 +415,13 @@ if __name__ == "__main__":
     logger.info("Starting Legal Document Demystifier API...")
     initialize_vertex_ai()
     
+    # Get port from environment variable (Cloud Run provides this)
+    port = int(os.environ.get("PORT", 8000))
+    
     # Run the application
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8000,
+        host="0.0.0.0",
+        port=port,
         log_level="info"
     )

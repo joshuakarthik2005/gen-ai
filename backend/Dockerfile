@@ -16,5 +16,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all application files
 COPY . .
 
-# Cloud Run will automatically set PORT, we just need to listen on it
-CMD exec uvicorn api:app --host 0.0.0.0 --port $PORT
+# Cloud Run will automatically set PORT, our Python code will read it
+CMD ["python", "api.py"]
