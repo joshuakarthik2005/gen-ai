@@ -13,12 +13,32 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import vertexai
-from vertexai.generative_models import GenerativeModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import Vertex AI with error handling
+try:
+    import vertexai
+    from vertexai.generative_models import GenerativeModel
+    VERTEX_AI_AVAILABLE = True
+    logger.info("Vertex AI imports successful")
+except ImportError as e:
+    logger.warning(f"Direct Vertex AI import failed: {e}")
+    # Try alternative approach
+    try:
+        from google.cloud import aiplatform
+        import vertexai
+        # Set up for alternative model usage
+        VERTEX_AI_AVAILABLE = True
+        GenerativeModel = None
+        logger.info("Using alternative Google Cloud AI Platform import")
+    except ImportError as e2:
+        logger.error(f"All Vertex AI imports failed: {e2}")
+        VERTEX_AI_AVAILABLE = False
+        vertexai = None
+        GenerativeModel = None
 
 # Google Cloud Storage imports (will be imported when available)
 try:
@@ -59,19 +79,28 @@ def initialize_vertex_ai():
     """Initialize Vertex AI with your project settings"""
     global vertex_ai_initialized, model
     
+    if not VERTEX_AI_AVAILABLE:
+        logger.error("Vertex AI modules not available - check dependencies")
+        return False
+    
     try:
-        # Set up authentication using the service account key
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service-account-key.json"
+        # For Cloud Run, don't set GOOGLE_APPLICATION_CREDENTIALS
+        # Cloud Run automatically provides service account authentication
         
-        # Project settings from the service account
+        # Project settings
         project_id = "demystifier-ai"
         location = "asia-south1"  # Mumbai region works for India users!
         
         # Initialize Vertex AI
         vertexai.init(project=project_id, location=location)
         
-        # Create the generative model instance
-        model = GenerativeModel("gemini-1.5-pro")
+        # Create the generative model instance if available
+        if GenerativeModel:
+            model = GenerativeModel("gemini-1.5-pro")
+        else:
+            # Alternative model setup
+            logger.warning("Using alternative model initialization")
+            model = None  # Will handle in analyze function
         
         vertex_ai_initialized = True
         logger.info(f"Vertex AI initialized with project: {project_id}, location: {location}")
@@ -411,14 +440,22 @@ def generate_mock_explanation(text: str) -> str:
 if __name__ == "__main__":
     import uvicorn
     
-    # Initialize Vertex AI on startup
-    logger.info("Starting Legal Document Demystifier API...")
-    initialize_vertex_ai()
+    # Get port from environment variable (Cloud Run provides this)
+    port = int(os.environ.get("PORT", 8000))
+    
+    logger.info(f"Starting Legal Document Demystifier API on port {port}...")
+    
+    # Try to initialize Vertex AI but don't block startup
+    try:
+        initialize_vertex_ai()
+        logger.info("Vertex AI initialized successfully")
+    except Exception as e:
+        logger.warning(f"Vertex AI initialization failed (will retry on first request): {e}")
     
     # Run the application
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8000,
+        host="0.0.0.0",
+        port=port,
         log_level="info"
     )

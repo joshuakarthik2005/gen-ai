@@ -19,7 +19,6 @@ SETUP.md
 test_client.py
 check_models.py
 enable_apis.sh
-sample_employment_agreement.txt
 
 # Ignore OS files
 .DS_Store

@@ -280,15 +280,16 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
       {/* Header */}
       <Header />
 
-      {/* Main Dashboard Layout */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full flex gap-4 p-4">
-          {/* Left Column - Document Viewer (28%) */}
-          <div className="w-[28%] min-w-[350px] h-full flex flex-col">
+      {/* Main Dashboard Layout - Stack on mobile, side-by-side on desktop */}
+      <div className="flex-1 overflow-hidden p-4">
+        <div className="h-full flex flex-col md:flex-row gap-4">
+          
+          {/* Document Viewer - Full width on mobile, left column on desktop */}
+          <div className="flex-shrink-0 w-full md:w-[28%] md:min-w-[350px] h-[60vh] md:h-full order-1 md:order-1">
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 h-full overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                 <h2 className="text-lg font-semibold text-gray-800">Document Viewer</h2>
-                <div className="text-sm text-gray-500">{filename}</div>
+                <div className="text-sm text-gray-500 truncate ml-2">{filename}</div>
               </div>
               <div className="flex-1 overflow-hidden">
                 <DocumentViewer 
@@ -300,8 +301,8 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
             </div>
           </div>
 
-          {/* Center Column - Analysis Panel (47%) */}
-          <div className="w-[47%] min-w-[450px] h-full flex flex-col">
+          {/* Analysis Panel - Stack below viewer on mobile, center column on desktop */}
+          <div className="flex-1 min-h-[50vh] md:h-full order-2 md:order-2">
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 h-full overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                 <h2 className="text-lg font-semibold text-gray-800">AI Analysis</h2>
@@ -353,8 +354,8 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
             </div>
           </div>
 
-          {/* Right Column - Chat Interface (25%) */}
-          <div className="w-[25%] min-w-[300px] h-full flex flex-col">
+          {/* Chat Interface - Bottom on mobile, right column on desktop */}
+          <div className="flex-shrink-0 w-full md:w-[25%] md:min-w-[300px] min-h-[40vh] md:h-full order-3 md:order-3">
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 h-full overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                 <h2 className="text-lg font-semibold text-gray-800">AI Assistant</h2>
