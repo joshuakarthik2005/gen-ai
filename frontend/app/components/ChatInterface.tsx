@@ -159,34 +159,21 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
   };
 
   return (
-    <div className="h-full bg-white border border-gray-200 rounded-lg flex flex-col shadow-card overflow-hidden">
-      {/* Chat Header */}
-      <div className="flex-shrink-0 border-b border-gray-200 p-4 bg-gray-50">
-        <div className="flex items-center space-x-2 mb-2">
-          <div className="p-2 bg-accent/10 rounded-lg">
-            <Bot className="w-5 h-5 text-accent" />
-          </div>
-          <h3 className="text-heading-4 text-gray-900">AI Assistant</h3>
-        </div>
-        <p className="text-body-small text-gray-500">
-          Get instant explanations and clarifications
-        </p>
-      </div>
-
+    <div className="h-full bg-white flex flex-col overflow-hidden">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-4 min-h-full">
           {messages.length === 0 && (
-            <div className="flex items-center justify-center h-full py-12">
+            <div className="flex items-center justify-center h-full py-8">
               <div className="text-center max-w-xs">
-                <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Bot className="w-8 h-8 text-accent" />
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Bot className="w-6 h-6 text-blue-600" />
                 </div>
-                <p className="text-body-small text-gray-500 mb-2 font-medium">
+                <p className="text-sm text-gray-500 mb-2 font-medium">
                   Ready to help!
                 </p>
-                <p className="text-body-small text-gray-400 leading-relaxed">
-                  Highlight text in the document or ask me anything about this employment agreement
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  Highlight text in the document or ask me anything about this legal document
                 </p>
               </div>
             </div>
@@ -200,22 +187,22 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
               }`}
             >
               {message.type === 'assistant' && (
-                <div className="w-8 h-8 bg-accent rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <Bot className="w-4 h-4 text-white" />
+                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <Bot className="w-3 h-3 text-white" />
                 </div>
               )}
               
               <div
-                className={`max-w-[80%] rounded-xl px-4 py-3 shadow-sm ${
+                className={`max-w-[85%] rounded-xl px-3 py-2 shadow-sm ${
                   message.type === 'user'
-                    ? 'bg-primary-blue text-white'
+                    ? 'bg-blue-500 text-white'
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
-                <p className="text-body-small leading-relaxed whitespace-pre-wrap">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
                   {message.content}
                 </p>
-                <p className={`text-xs mt-2 opacity-75 ${
+                <p className={`text-xs mt-1 opacity-75 ${
                   message.type === 'user' ? 'text-blue-200' : 'text-gray-500'
                 }`}>
                   {message.timestamp.toLocaleTimeString([], { 
@@ -226,8 +213,8 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
               </div>
 
               {message.type === 'user' && (
-                <div className="w-8 h-8 bg-primary-blue rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <User className="w-4 h-4 text-white" />
+                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <User className="w-3 h-3 text-white" />
                 </div>
               )}
             </div>
@@ -235,10 +222,10 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
 
           {isLoading && (
             <div className="flex items-start space-x-3">
-              <div className="w-8 h-8 bg-accent rounded-full flex items-center justify-center shadow-sm">
-                <Bot className="w-4 h-4 text-white" />
+              <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center shadow-sm">
+                <Bot className="w-3 h-3 text-white" />
               </div>
-              <div className="bg-gray-100 rounded-xl px-4 py-3 shadow-sm">
+              <div className="bg-gray-100 rounded-xl px-3 py-2 shadow-sm">
                 <div className="flex space-x-1">
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
@@ -253,21 +240,21 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
       </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 border-t border-gray-200 p-4 bg-gray-50">
-        <div className="flex space-x-3">
+      <div className="flex-shrink-0 border-t border-gray-200 p-3 bg-gray-50">
+        <div className="flex space-x-2">
           <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Ask anything about this document..."
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2.5 text-body focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-colors bg-white"
+            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors bg-white"
             rows={1}
-            style={{ minHeight: '42px', maxHeight: '120px' }}
+            style={{ minHeight: '36px', maxHeight: '100px' }}
           />
           <button
             onClick={handleSend}
             disabled={!inputValue.trim() || isLoading}
-            className="bg-accent text-white p-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0 shadow-sm hover:shadow-md"
+            className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0 shadow-sm hover:shadow-md"
             title="Send message"
           >
             <Send className="w-4 h-4" />
