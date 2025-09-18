@@ -1,7 +1,15 @@
-name: Deploy Backend to Cloud Run
+name: Deploy Backend to Cloud R      - name: Google Auth
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'
 
-on:
-  push:
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'  push:
     branches: [ main ]
     paths:
       - 'backend/**'
