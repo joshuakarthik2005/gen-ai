@@ -23,13 +23,13 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      
+
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Google Auth (WIF)
+      - name: Google Auth
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
@@ -42,41 +42,29 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.GAR_HOST }}
 
-      # Step 1: Ensure the AR repository exists
       - name: Create Artifact Registry Repository
         run: |-
           gcloud artifacts repositories create ${{ env.SERVICE }} \
             --repository-format=docker \
             --location=${{ env.GAR_LOCATION }} \
             --description="Docker repository for legal-backend" || echo "Repository may already exist"
-      # Step 2: Build and Push Container (FIX APPLIED)
       - name: Build and Push Container
-        # Define the full image URL once, locally within this step
-        env:
-          IMAGE_URL: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         run: |-
           cd backend
-          # Build: Use the clean variable
-          docker build -t $IMAGE_URL .
-          # Push: Use the clean variable. This fixes the "Missing image name" error.
-          docker push $IMAGE_URL
+          docker build -t "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}" .
+          docker push "${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}"
           
-      # Step 3: Deploy to Cloud Run
       - name: Deploy to Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          # Use the same logic to reference the image URL
           image: ${{ env.GAR_HOST }}/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-          
-      # Step 4: Show Output
+
       - name: Show Output
-        run: |
-          echo "Cloud Run Service URL: ${{ steps.deploy.outputs.url }}"
-        
-      # Step 5: Test Deployment
+        run: echo "Cloud Run Service URL:${{ steps.deploy.outputs.url }}"
+
       - name: Test Deployment
         run: |-
           curl -fsS ${{ steps.deploy.outputs.url }}/health
