@@ -35,19 +35,19 @@ export default function Dashboard() {
 
   if (showUploadDemo) {
     return (
-      <div className="h-screen bg-white flex flex-col overflow-hidden">
+  <div className="h-screen bg-white flex flex-col overflow-hidden">
         {/* Header */}
         <Header />
 
         {/* Main Three-Panel Layout */}
-        <div className="flex-1 overflow-hidden flex">
-          {/* Left Panel - Workspace Sidebar (20%) */}
-          <div className="w-[20%] min-w-[280px] border-r border-gray-200 bg-gray-50">
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+          {/* Left Panel - Workspace Sidebar */}
+          <div className="order-2 md:order-1 md:w-[20%] md:min-w-[280px] bg-gray-50 border-t md:border-t-0 md:border-r border-gray-200">
             <WorkspaceSidebar onDocumentSelect={handleDocumentSelect} />
           </div>
 
-          {/* Center Panel - Document Viewer (50%) */}
-          <div className="w-[50%] min-w-[400px] bg-white">
+          {/* Center Panel - Document Viewer */}
+          <div className="order-1 md:order-2 md:w-[50%] md:min-w-[400px] bg-white min-h-[40vh] md:min-h-0">
             <DocumentViewer 
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
@@ -55,9 +55,13 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Right Panel - Synapse Analysis (30%) */}
-          <div className="w-[30%] min-w-[320px] border-l border-gray-200 bg-gray-50">
-            <SynapsePanel explainedText={explainedText} />
+          {/* Right Panel - Synapse Analysis */}
+          <div className="order-3 md:order-3 md:w-[30%] md:min-w-[320px] bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200">
+            <SynapsePanel 
+              explainedText={explainedText}
+              documentUrl={selectedDocument.url}
+              filename={selectedDocument.name}
+            />
           </div>
         </div>
       </div>

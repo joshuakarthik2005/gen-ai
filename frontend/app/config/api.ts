@@ -11,6 +11,8 @@ export const API_CONFIG = {
     HEALTH: "/health",
     ANALYZE_DOCUMENT: "/analyze-document",
     ANALYZE_TEXT: "/analyze-text",
+    SUMMARIZE: "/summarize",
+    SUMMARIZE_UPLOAD: "/summarize-upload",
     ROOT: "/"
   },
   

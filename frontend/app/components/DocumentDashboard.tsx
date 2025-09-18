@@ -2,9 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Header from "./Header";
-import DocumentViewer from "./DocumentViewer";
+import DocumentViewer from "./DocumentViewerAdobe";
 import AnalysisPanel from "./AnalysisPanel";
 import ChatInterface from "./ChatInterface";
+import { Sparkles } from "lucide-react";
+import { API_CONFIG, getApiUrl } from "../config/api";
+
+// No local API route; we call the backend directly via API_CONFIG
 
 interface DocumentDashboardProps {
   documentUrl: string;
@@ -15,6 +19,13 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
   const [explainedText, setExplainedText] = useState<string>("");
   const [documentAnalysis, setDocumentAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(true);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [laymanSummary, setLaymanSummary] = useState<{
+    title: string;
+    summary: string;
+    key_points: string[];
+  } | null>(null);
+  const [summarizeError, setSummarizeError] = useState<string | null>(null);
 
   const handleExplainText = (text: string) => {
     setExplainedText(text);
@@ -28,18 +39,30 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
       try {
         setIsAnalyzing(true);
         
-        // Fetch the document from the signed URL and send it for analysis
-        const documentResponse = await fetch(documentUrl);
+        // Fetch the document from the URL; if cross-origin, use our proxy to avoid CORS
+        let fetchUrl = documentUrl;
+        try {
+          const u = new URL(documentUrl, window.location.origin);
+          const isCrossOrigin = u.origin !== window.location.origin;
+          if (isCrossOrigin) {
+            fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
+          }
+        } catch {
+          // ignore
+        }
+        const documentResponse = await fetch(fetchUrl);
         if (!documentResponse.ok) {
           throw new Error('Failed to fetch document');
         }
         
-        const documentBlob = await documentResponse.blob();
-        const formData = new FormData();
-        formData.append('file', documentBlob, filename);
+  const documentBlob = await documentResponse.blob();
+  // Wrap in File with explicit type (PDF) so backend properly handles parsing
+  const docFile = new File([documentBlob], filename || 'document.pdf', { type: documentBlob.type || 'application/pdf' });
+  const formData = new FormData();
+  formData.append('file', docFile);
         
         // Call the analyze-document endpoint
-        const analysisResponse = await fetch(API_ENDPOINTS.ANALYZE_DOCUMENT, {
+        const analysisResponse = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.ANALYZE_DOCUMENT), {
           method: 'POST',
           body: formData,
         });
@@ -84,6 +107,77 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
 
     analyzeDocument();
   }, [documentUrl, filename]);
+
+  // Normalize various possible summary response shapes into { title, summary, key_points[] }
+  const normalizeSummaryResponse = (data: any) => {
+    try {
+      // If backend returned a JSON string in a field, try parsing
+      const candidate = typeof data === 'string' ? JSON.parse(data) : data;
+      let root = candidate;
+      if (candidate && typeof candidate === 'object') {
+        // Common wrappers
+        if (candidate.result) root = candidate.result;
+        else if (candidate.data) root = candidate.data;
+      }
+      // If still a string, try parse
+      if (typeof root === 'string') {
+        try { root = JSON.parse(root); } catch { /* ignore */ }
+      }
+      const title = root?.title || filename || 'Summary';
+      const summary = root?.summary || root?.content || root?.text || '';
+      const key_points = Array.isArray(root?.key_points) ? root.key_points : [];
+      return { title, summary, key_points };
+    } catch {
+      return { title: filename || 'Summary', summary: '', key_points: [] };
+    }
+  };
+
+  const summarizeDocument = async () => {
+    setIsSummarizing(true);
+    setSummarizeError(null);
+    try {
+      // First try by URL (fast path for public/signed URLs)
+      const resp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.SUMMARIZE), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdf_url: documentUrl, filename }),
+      });
+      if (!resp.ok) throw new Error('Summarize by URL failed');
+      const data = await resp.json();
+      setLaymanSummary(normalizeSummaryResponse(data));
+    } catch (err) {
+      try {
+        // Fallback: upload file bytes via proxy fetch (handle cross-origin via our Next proxy)
+        let fetchUrl = documentUrl;
+        try {
+          const u = new URL(documentUrl, window.location.origin);
+          const isCrossOrigin = u.origin !== window.location.origin;
+          if (isCrossOrigin) {
+            fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
+          }
+        } catch {
+          // ignore, use as-is
+        }
+        const documentResponse = await fetch(fetchUrl);
+        if (!documentResponse.ok) throw new Error('Failed to fetch document');
+        const blob = await documentResponse.blob();
+        const formData = new FormData();
+        formData.append('file', blob, filename);
+        const resp2 = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.SUMMARIZE_UPLOAD), {
+          method: 'POST',
+          body: formData,
+        });
+        if (!resp2.ok) throw new Error('Summarize upload failed');
+        const data2 = await resp2.json();
+        setLaymanSummary(normalizeSummaryResponse(data2));
+      } catch (err2) {
+        console.error('Error summarizing document:', err2);
+        setSummarizeError('Failed to summarize document. Please try again.');
+      }
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
 
   // Function to parse the AI analysis response into our expected structure
   const parseAnalysisResponse = (analysisText: string, filename: string) => {
@@ -212,6 +306,25 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
               <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                 <h2 className="text-lg font-semibold text-gray-800">AI Analysis</h2>
                 <div className="flex items-center space-x-2">
+                  {/* Summarize button */}
+                  <button
+                    onClick={summarizeDocument}
+                    disabled={isSummarizing}
+                    className={`inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm border ${isSummarizing ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'}`}
+                    title="Generate a layman-friendly summary"
+                  >
+                    {isSummarizing ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin mr-2"></span>
+                        Summarizing
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-1.5" />
+                        Summarize
+                      </>
+                    )}
+                  </button>
                   {isAnalyzing && (
                     <div className="flex items-center space-x-2 text-blue-600">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -231,7 +344,11 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
                   documentAnalysis={documentAnalysis}
                   isLoading={isAnalyzing}
                   filename={filename}
+                  laymanSummary={laymanSummary}
                 />
+                {summarizeError && (
+                  <div className="px-4 pb-4 text-sm text-red-600">{summarizeError}</div>
+                )}
               </div>
             </div>
           </div>
