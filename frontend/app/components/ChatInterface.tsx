@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Send, Bot, User } from "lucide-react";
+import { BASE_URL } from "../config/api";
 
 interface Message {
   id: string;
@@ -49,7 +50,7 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://legal-backend-144935064473.asia-south1.run.app/explain-selection', {
+      const response = await fetch(`${BASE_URL}/explain-selection`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

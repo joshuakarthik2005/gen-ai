@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, FileText, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import DocumentDashboard from "./DocumentDashboard";
+import { BASE_URL } from "../config/api";
 
 interface DocumentUploaderProps {
   onUploadSuccess?: (signedUrl: string, filename: string) => void;
@@ -41,7 +42,7 @@ export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderPr
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('https://legal-backend-144935064473.asia-south1.run.app/upload-document', {
+      const response = await fetch(`${BASE_URL}/upload-document`, {
         method: 'POST',
         body: formData,
       });

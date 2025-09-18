@@ -11,12 +11,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from google.cloud import aiplatform
 import google.auth
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Pydantic models for request/response
+class TextAnalysisRequest(BaseModel):
+    selected_text: str
+    document_url: str = ""
+
+class ExplainSelectionRequest(BaseModel):
+    selected_text: str
+    document_url: str = ""
 
 # Global variables for Vertex AI configuration
 vertex_ai_initialized = False
@@ -183,6 +193,119 @@ async def health_check():
         "vertex_ai_initialized": vertex_ai_initialized,
         "timestamp": "2025-09-17"
     }
+
+
+@app.post("/upload-document")
+async def upload_document_endpoint(file: UploadFile = File(...)):
+    """
+    Upload a document and return a signed URL for viewing
+    
+    - **file**: Document file to upload
+    """
+    try:
+        # Check file type
+        allowed_types = ["application/pdf", "text/plain", "application/msword", 
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+        
+        if file.content_type not in allowed_types:
+            logger.warning(f"File type {file.content_type} may not be supported")
+        
+        # Read file content
+        content = await file.read()
+        
+        # For demo purposes, we'll create a temporary URL
+        # In production, you'd upload to Cloud Storage and return a signed URL
+        import base64
+        
+        # Create a simple data URL for PDF viewing
+        if file.content_type == "application/pdf":
+            base64_content = base64.b64encode(content).decode()
+            data_url = f"data:application/pdf;base64,{base64_content}"
+        else:
+            # For text files, convert to data URL
+            try:
+                text_content = content.decode('utf-8')
+                base64_content = base64.b64encode(text_content.encode()).decode()
+                data_url = f"data:text/plain;base64,{base64_content}"
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=400, detail="Unable to decode file content")
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "filename": file.filename,
+                "signed_url": data_url,
+                "content_type": file.content_type,
+                "size": len(content)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@app.post("/explain-selection")
+async def explain_selection_endpoint(request: ExplainSelectionRequest):
+    """
+    Explain a selected piece of text from a legal document
+    
+    - **selected_text**: The text to explain
+    - **document_url**: Optional context about the document
+    """
+    try:
+        selected_text = request.selected_text.strip()
+        
+        if not selected_text:
+            raise HTTPException(status_code=400, detail="No text provided for explanation")
+        
+        if len(selected_text) > 2000:  # Limit selection size
+            selected_text = selected_text[:2000]
+            logger.warning("Selected text truncated to 2,000 characters")
+        
+        # Create a focused explanation prompt
+        explanation_prompt = f"""You are an expert legal advisor. A user has highlighted this text from a legal document and wants a clear explanation:
+
+"{selected_text}"
+
+Please provide:
+1. A simple explanation of what this text means in plain English
+2. Any important implications or obligations it creates
+3. Any potential risks or benefits for the person reading it
+
+Keep your explanation concise, clear, and focused on what the reader needs to know."""
+        
+        # For now, return a basic explanation since we're focusing on frontend integration
+        # In production, this would use Vertex AI
+        explanation = f"""This selected text appears to be a legal clause or provision. Here's what it means:
+
+**Plain English Explanation:**
+{selected_text[:200]}... - This text establishes certain terms or conditions that parties must follow.
+
+**Key Points:**
+• This creates specific obligations or rights
+• It may affect your responsibilities under this agreement
+• Consider consulting a lawyer for personalized advice
+
+**Recommendation:**
+Pay careful attention to this clause as it may have important legal implications for your situation."""
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "explanation": explanation,
+                "selected_text": selected_text,
+                "character_count": len(selected_text)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Explanation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate explanation: {str(e)}")
 
 
 @app.post("/analyze-document")

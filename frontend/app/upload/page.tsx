@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, Bot, FileText, Sparkles } from "lucide-react";
 import DocumentUploader from "../components/DocumentUploader";
 import DocumentViewer from "../components/DocumentViewerNew";
+import { BASE_URL } from "../config/api";
 
 export default function DocumentAnalysisPage() {
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export default function DocumentAnalysisPage() {
       
       const fetchExplanation = async () => {
         try {
-          const response = await fetch('http://127.0.0.1:8000/explain-selection', {
+          const response = await fetch(`${BASE_URL}/explain-selection`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
