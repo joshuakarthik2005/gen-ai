@@ -28,7 +28,7 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
     const analyzeDocument = async () => {
       try {
         setIsAnalyzing(true);
-        
+        //c
         // Fetch the document from the signed URL and send it for analysis
         const documentResponse = await fetch(documentUrl);
         if (!documentResponse.ok) {
