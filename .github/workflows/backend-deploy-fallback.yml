@@ -1,4 +1,4 @@
-name: Deploy Backend to Cloud Run
+name: Deploy Backend to Cloud Run (Service Account Key)
 
 on:
   push:
@@ -20,26 +20,23 @@ env:
 
 jobs:
   deploy:
-    permissions:
-      contents: read
-      id-token: write
-
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Google Auth
-        id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
-          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'
 
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: '${{ secrets.GCP_PROJECT_ID }}'
 
-      - name: Configure Docker for Artifact Registry
+      - name: Authenticate Docker with Google Cloud
         run: gcloud auth configure-docker ${{ env.GAR_HOST }}
 
       - name: Create Artifact Registry Repository
@@ -48,6 +45,7 @@ jobs:
             --repository-format=docker \
             --location=${{ env.GAR_LOCATION }} \
             --description="Docker repository for legal-backend" || echo "Repository may already exist"
+      
       - name: Build and Push Container
         run: |-
           cd backend
