@@ -5,7 +5,6 @@ import Header from "./Header";
 import DocumentViewer from "./DocumentViewer";
 import AnalysisPanel from "./AnalysisPanel";
 import ChatInterface from "./ChatInterface";
-import { API_ENDPOINTS } from "../lib/config";
 
 interface DocumentDashboardProps {
   documentUrl: string;

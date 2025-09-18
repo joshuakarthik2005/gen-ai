@@ -4,13 +4,19 @@ import { useState } from "react";
 import { Upload, FileText, Bot, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import Header from "./components/Header";
-import DocumentViewer from "./components/DocumentViewer";
+import DocumentViewer from "./components/DocumentViewerAdobe";
 import AnalysisPanel from "./components/AnalysisPanel";
 import ChatInterface from "./components/ChatInterface";
+import WorkspaceSidebar from "./components/WorkspaceSidebar";
+import SynapsePanel from "./components/SynapsePanel";
 
 export default function Dashboard() {
   const [explainedText, setExplainedText] = useState<string>("");
-  const [showUploadDemo, setShowUploadDemo] = useState(false);
+  const [showUploadDemo, setShowUploadDemo] = useState(true); // Default to true to show the new interface
+  const [selectedDocument, setSelectedDocument] = useState({
+    url: "https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf",
+    name: "Sample Employment Agreement"
+  });
 
   const handleExplainText = (text: string) => {
     setExplainedText(text);
@@ -18,37 +24,40 @@ export default function Dashboard() {
     setTimeout(() => setExplainedText(""), 100);
   };
 
+  const handleDocumentSelect = (document: any) => {
+    if (document.url) {
+      setSelectedDocument({
+        url: document.url,
+        name: document.name
+      });
+    }
+  };
+
   if (showUploadDemo) {
     return (
-      <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      <div className="h-screen bg-white flex flex-col overflow-hidden">
         {/* Header */}
         <Header />
 
-        {/* Main Dashboard Layout */}
-        <div className="flex-1 overflow-hidden">
-          <div className="h-full flex gap-6 p-6">
-            {/* Left Column - Document Viewer (28%) */}
-            <div className="w-[28%] min-w-[350px] h-full">
-              <DocumentViewer 
-                documentUrl="/sample_employment_agreement.txt"
-                filename="Sample Employment Agreement"
-                onExplainText={handleExplainText} 
-              />
-            </div>
+        {/* Main Three-Panel Layout */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left Panel - Workspace Sidebar (20%) */}
+          <div className="w-[20%] min-w-[280px] border-r border-gray-200 bg-gray-50">
+            <WorkspaceSidebar onDocumentSelect={handleDocumentSelect} />
+          </div>
 
-            {/* Center Column - Analysis Panel (47%) */}
-            <div className="w-[47%] min-w-[450px] h-full">
-              <AnalysisPanel 
-                documentAnalysis={null}
-                isLoading={false}
-                filename="Sample Employment Agreement"
-              />
-            </div>
+          {/* Center Panel - Document Viewer (50%) */}
+          <div className="w-[50%] min-w-[400px] bg-white">
+            <DocumentViewer 
+              documentUrl={selectedDocument.url}
+              filename={selectedDocument.name}
+              onExplainText={handleExplainText} 
+            />
+          </div>
 
-            {/* Right Column - Chat Interface (25%) */}
-            <div className="w-[25%] min-w-[300px] h-full">
-              <ChatInterface explainedText={explainedText} />
-            </div>
+          {/* Right Panel - Synapse Analysis (30%) */}
+          <div className="w-[30%] min-w-[320px] border-l border-gray-200 bg-gray-50">
+            <SynapsePanel explainedText={explainedText} />
           </div>
         </div>
       </div>
