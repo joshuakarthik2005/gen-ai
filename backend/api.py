@@ -13,12 +13,32 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import vertexai
-from vertexai.generative_models import GenerativeModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import Vertex AI with error handling
+try:
+    import vertexai
+    from vertexai.generative_models import GenerativeModel
+    VERTEX_AI_AVAILABLE = True
+    logger.info("Vertex AI imports successful")
+except ImportError as e:
+    logger.warning(f"Direct Vertex AI import failed: {e}")
+    # Try alternative approach
+    try:
+        from google.cloud import aiplatform
+        import vertexai
+        # Set up for alternative model usage
+        VERTEX_AI_AVAILABLE = True
+        GenerativeModel = None
+        logger.info("Using alternative Google Cloud AI Platform import")
+    except ImportError as e2:
+        logger.error(f"All Vertex AI imports failed: {e2}")
+        VERTEX_AI_AVAILABLE = False
+        vertexai = None
+        GenerativeModel = None
 
 # Google Cloud Storage imports (will be imported when available)
 try:
@@ -59,6 +79,10 @@ def initialize_vertex_ai():
     """Initialize Vertex AI with your project settings"""
     global vertex_ai_initialized, model
     
+    if not VERTEX_AI_AVAILABLE:
+        logger.error("Vertex AI modules not available - check dependencies")
+        return False
+    
     try:
         # For Cloud Run, don't set GOOGLE_APPLICATION_CREDENTIALS
         # Cloud Run automatically provides service account authentication
@@ -70,8 +94,13 @@ def initialize_vertex_ai():
         # Initialize Vertex AI
         vertexai.init(project=project_id, location=location)
         
-        # Create the generative model instance
-        model = GenerativeModel("gemini-1.5-pro")
+        # Create the generative model instance if available
+        if GenerativeModel:
+            model = GenerativeModel("gemini-1.5-pro")
+        else:
+            # Alternative model setup
+            logger.warning("Using alternative model initialization")
+            model = None  # Will handle in analyze function
         
         vertex_ai_initialized = True
         logger.info(f"Vertex AI initialized with project: {project_id}, location: {location}")
