@@ -35,9 +35,9 @@ on:
       - '"main"'
 
 env:
-  PROJECT_ID: 'my-project' # TODO: update to your Google Cloud project ID
-  REGION: 'us-central1' # TODO: update to your region
-  SERVICE: 'my-service' # TODO: update to your service name
+  PROJECT_ID: 'demystifier-ai' # Your Google Cloud project ID
+  REGION: 'asia-south1' # Your deployment region
+  SERVICE: 'legal-backend' # Your Cloud Run service name
 
 jobs:
   deploy:
@@ -59,15 +59,16 @@ jobs:
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@f112390a2df9932162083945e46d439060d66ec2' # google-github-actions/auth@v2
         with:
-          workload_identity_provider: 'projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider' # TODO: replace with your workload identity provider
+          workload_identity_provider: 'projects/144935064473/locations/global/workloadIdentityPools/github-actions/providers/github'
+          service_account: 'github-actions@demystifier-ai.iam.gserviceaccount.com'
 
       - name: 'Deploy to Cloud Run'
         uses: 'google-github-actions/deploy-cloudrun@33553064113a37d688aa6937bacbdc481580be17' # google-github-actions/deploy-cloudrun@v2
         with:
           service: '${{ env.SERVICE }}'
           region: '${{ env.REGION }}'
-          # NOTE: If using a different source folder, update the image name below:
-          source: './'
+          # Deploy from the backend folder where the API code is located
+          source: './backend'
 
       # If required, use the Cloud Run URL output in later steps
       - name: 'Show output'
