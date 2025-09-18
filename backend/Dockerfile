@@ -4,20 +4,17 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Set environment variables (excluding PORT which is set by Cloud Run)
+# Set environment variables (Cloud Run will provide PORT automatically)
 ENV PYTHONUNBUFFERED=1
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install dependencies with verbose output
-RUN pip install --no-cache-dir --verbose -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all application files
 COPY . .
 
-# Expose port (Cloud Run will set the PORT env var automatically)
-EXPOSE 8080
-
-# Use Cloud Run's PORT environment variable
-CMD exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8080}
+# Cloud Run will automatically set PORT, we just need to listen on it
+CMD exec uvicorn api:app --host 0.0.0.0 --port $PORT
