@@ -93,13 +93,7 @@ export default function AnalysisPanel({ documentAnalysis, isLoading = false, fil
   };
 
   return (
-    <div className="h-full flex flex-col bg-white border border-gray-200 rounded-lg shadow-card overflow-hidden">
-      {/* Panel Header */}
-      <div className="flex-shrink-0 border-b border-gray-200 px-6 py-4 bg-gray-50">
-        <h1 className="text-heading-3 text-primary font-bold">AI Analysis</h1>
-        <p className="text-body-small text-gray-500 mt-1">Smart insights from your legal document</p>
-      </div>
-
+    <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* Loading State */}
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center">
@@ -112,28 +106,28 @@ export default function AnalysisPanel({ documentAnalysis, isLoading = false, fil
       ) : (
         /* Scrollable Content */
         <div className="flex-1 overflow-y-auto">
-          <div className="p-6 space-y-6">
+          <div className="p-4 space-y-4">
             {/* Executive Summary */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-card transition-shadow">
-              <div className="flex items-center space-x-2 mb-4">
-                <div className="p-2 bg-primary-blue/10 rounded-lg">
-                  <FileText className="w-5 h-5 text-primary-blue" />
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center space-x-2 mb-3">
+                <div className="p-2 bg-blue-500 rounded-lg">
+                  <FileText className="w-5 h-5 text-white" />
                 </div>
-                <h2 className="text-heading-3">Executive Summary</h2>
+                <h2 className="text-lg font-semibold text-gray-800">Executive Summary</h2>
               </div>
-              <p className="text-body leading-relaxed text-gray-700">
+              <p className="text-sm leading-relaxed text-gray-700">
                 {executiveSummary}
               </p>
             </div>
 
             {/* Key Clauses & Risks */}
-            <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-card transition-shadow overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50">
                 <div className="flex items-center space-x-2">
-                  <div className="p-2 bg-orange-100 rounded-lg">
-                    <AlertTriangle className="w-5 h-5 text-orange-600" />
+                  <div className="p-2 bg-orange-500 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-white" />
                   </div>
-                  <h2 className="text-heading-3">Key Clauses & Risks</h2>
+                  <h2 className="text-lg font-semibold text-gray-800">Key Clauses & Risks</h2>
                 </div>
               </div>
 
@@ -144,21 +138,21 @@ export default function AnalysisPanel({ documentAnalysis, isLoading = false, fil
                     value={clause.id}
                     className="border-b border-gray-100 last:border-b-0"
                   >
-                    <AccordionTrigger className="flex items-center justify-between w-full p-6 text-left hover:bg-gray-50 transition-colors group">
+                    <AccordionTrigger className="flex items-center justify-between w-full p-4 text-left hover:bg-gray-50 transition-colors group">
                       <div className="flex items-center space-x-3">
                         {getRiskIcon(clause.riskLevel)}
-                        <span className="text-heading-4 group-hover:text-primary-blue transition-colors">{clause.title}</span>
+                        <span className="text-base font-medium group-hover:text-blue-600 transition-colors">{clause.title}</span>
                       </div>
-                      <ChevronDown className="w-4 h-4 text-gray-500 transition-transform duration-200 group-hover:text-primary-blue" />
+                      <ChevronDown className="w-4 h-4 text-gray-500 transition-transform duration-200 group-hover:text-blue-600" />
                     </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6">
-                      <div className={`border-l-4 pl-4 py-4 rounded-r-lg ${getRiskColor(clause.riskLevel)}`}>
-                        <p className="text-body mb-4 text-gray-700 leading-relaxed">
+                    <AccordionContent className="px-4 pb-4">
+                      <div className={`border-l-4 pl-4 py-3 rounded-r-lg ${getRiskColor(clause.riskLevel)}`}>
+                        <p className="text-sm mb-3 text-gray-700 leading-relaxed">
                           {clause.explanation}
                         </p>
-                        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
                           <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Original Clause</div>
-                          <p className="text-body-small italic text-gray-600 leading-relaxed">
+                          <p className="text-xs italic text-gray-600 leading-relaxed">
                             "{clause.content}"
                           </p>
                         </div>
@@ -170,13 +164,13 @@ export default function AnalysisPanel({ documentAnalysis, isLoading = false, fil
             </div>
 
             {/* Defined Terms */}
-            <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-card transition-shadow">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                <div className="flex items-center space-x-2 mb-4">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <BookOpen className="w-5 h-5 text-blue-600" />
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+              <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="p-2 bg-blue-500 rounded-lg">
+                    <BookOpen className="w-5 h-5 text-white" />
                   </div>
-                  <h2 className="text-heading-3">Defined Terms</h2>
+                  <h2 className="text-lg font-semibold text-gray-800">Defined Terms</h2>
                 </div>
                 
                 {/* Search */}
@@ -187,27 +181,27 @@ export default function AnalysisPanel({ documentAnalysis, isLoading = false, fil
                     placeholder="Search terms..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-body transition-colors"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-colors"
                   />
                 </div>
               </div>
 
-              <div className="p-6">
-                <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
+              <div className="p-4">
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
                   {filteredTerms.map((term) => (
-                    <div key={term.term} className="border-b border-gray-100 last:border-b-0 pb-4 last:pb-0">
-                      <div className="font-medium text-primary-blue text-body hover:text-primary transition-colors cursor-pointer">
+                    <div key={term.term} className="border-b border-gray-100 last:border-b-0 pb-3 last:pb-0">
+                      <div className="font-medium text-blue-600 text-sm hover:text-blue-800 transition-colors cursor-pointer">
                         {term.term}
                       </div>
-                      <div className="text-body-small text-gray-600 mt-1 leading-relaxed">
+                      <div className="text-xs text-gray-600 mt-1 leading-relaxed">
                         {term.definition}
                       </div>
                     </div>
                   ))}
                   
                   {filteredTerms.length === 0 && (
-                    <div className="text-center text-gray-500 text-body-small py-8">
-                      <Search className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+                    <div className="text-center text-gray-500 text-sm py-6">
+                      <Search className="w-6 h-6 text-gray-300 mx-auto mb-2" />
                       <p>No terms found matching "{searchTerm}"</p>
                       <p className="text-xs text-gray-400 mt-1">Try a different search term</p>
                     </div>

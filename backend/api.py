@@ -1,7 +1,7 @@
 """
-Legal Document Demystifier - FastAPI Ap        # Create the generative model instance - using the working model
-        model = GenerativeModel("gemini-1.5-pro")ication
+Legal Document Demystifier - FastAPI Application v2.1
 Provides a REST API for analyzing legal documents using Google's Gemini model
+Fixed GitHub Actions deployment permissions
 """
 
 import os
