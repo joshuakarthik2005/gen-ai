@@ -1,4 +1,17 @@
 # Legal Document Demystifier Backend Requirements
+# Cloud Run compatible versions
+
+# Web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Google Cloud - using compatible versions
+google-cloud-aiplatform==1.35.0
+google-cloud-storage==2.8.0
+
+# HTTP client
+requests==2.31.0nt Demystifier Backend Requirements
 # Simplified versions for reliable Cloud Build
 
 # Core web framework
