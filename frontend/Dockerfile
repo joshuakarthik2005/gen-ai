@@ -7,8 +7,15 @@ WORKDIR /app
 # Install system dependencies
 RUN apk add --no-cache libc6-compat
 
-# Copy package files for dependency installation
-COPY package*.json ./
+# Debug: Check what files are in the build context
+RUN echo "=== BUILD CONTEXT DEBUG ===" && \
+    echo "Current directory:" && pwd && \
+    echo "Root directory contents:" && ls -la / && \
+    echo "Current working directory contents:" && ls -la . && \
+    echo "Looking for package files:" && find / -name "package.json" 2>/dev/null || echo "No package.json found"
+
+# Copy package files explicitly (these should be in the build context root)
+COPY package.json package-lock.json ./
 
 # Install all dependencies (including dev dependencies for build)
 RUN npm ci
