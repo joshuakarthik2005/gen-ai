@@ -5,7 +5,9 @@ import { FileText, MessageSquare, X, Send, Bot, User } from "lucide-react";
 import { API_CONFIG, getApiUrl } from "../config/api";
 
 // Adobe PDF Embed API Configuration
-const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string;
+const ADOBE_API_KEY =
+  (process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string) ||
+  "e3b008974ccc4ac5aacabe3252c01c67";
 
 interface DocumentViewerProps {
   documentUrl: string;
@@ -28,52 +30,9 @@ interface ChatMessage {
   timestamp: Date;
 }
 
-// Minimal type surface for the Adobe Embed SDK we actually use
-interface AdobeViewerAPIs {
-  getSelectedContent: () => Promise<{ data: string }>;
-}
-
-interface AdobePreview {
-  getAPIs: () => Promise<AdobeViewerAPIs>;
-}
-
-interface AdobeDCView {
-  previewFile: (
-    filePromise: {
-      content: { promise: Promise<ArrayBuffer> };
-      metaData: { fileName: string };
-    },
-    options?: Record<string, unknown>
-  ) => Promise<AdobePreview>;
-  registerCallback: (
-    callbackType: string,
-    callback: (event: { type: string; data?: unknown }) => void,
-    options?: Record<string, unknown>
-  ) => void;
-  dispose?: () => void;
-}
-
-type AdobeDCEnumType = {
-  FilePreviewEvents: {
-    PREVIEW_SELECTION_END: string;
-    PREVIEW_PAGE_CLICK: string;
-    PREVIEW_DOCUMENT_CLICK: string;
-  };
-  CallbackType: {
-    EVENT_LISTENER: string;
-  };
-};
-
-interface AdobeDCNamespace {
-  View: {
-    new (options: { clientId: string; divId: string }): AdobeDCView;
-    Enum: AdobeDCEnumType;
-  };
-}
-
 declare global {
   interface Window {
-    AdobeDC: AdobeDCNamespace;
+    AdobeDC: any;
   }
 }
 
@@ -113,7 +72,7 @@ function ExplainTooltip({ x, y, selectedText, onExplain, onClose }: ExplainToolt
     >
       <div className="flex items-start justify-between mb-2">
         <div className="text-xs text-gray-600 line-clamp-3 pr-2">
-          &quot;{selectedText.length > 100 ? selectedText.substring(0, 100) + "..." : selectedText}&quot;
+          "{selectedText.length > 100 ? selectedText.substring(0, 100) + "..." : selectedText}"
         </div>
         <button
           onClick={onClose}
@@ -148,10 +107,10 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
   const viewerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
-  const [adobeView, setAdobeView] = useState<AdobeDCView | null>(null);
+  const [adobeView, setAdobeView] = useState<any>(null);
   const [selectedText, setSelectedText] = useState("");
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
-  // no stored preview instance needed
+  const [adobeViewer, setAdobeViewer] = useState<any>(null);
   
   // Chat-related states
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -391,18 +350,19 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
       );
 
       // Wait for the preview to be ready and get access to viewer APIs
-      previewFilePromise.then((adobeViewer: AdobePreview) => {
+      previewFilePromise.then(adobeViewer => {
+        setAdobeViewer(adobeViewer);
         
         // Extract document text for chat context
         extractDocumentText();
         
         // Set up text selection monitoring
-  adobeViewer.getAPIs().then((apis: AdobeViewerAPIs) => {
+        adobeViewer.getAPIs().then((apis: any) => {
           
           // Set up a periodic check for selected content
           const checkSelection = () => {
             apis.getSelectedContent()
-              .then((result: { data: string }) => {
+              .then((result: any) => {
                 if (result && result.data && result.data.trim()) {
                   const selection = window.getSelection();
                   if (selection && selection.rangeCount > 0) {
@@ -448,8 +408,8 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
 
       adobeDCView.registerCallback(
         window.AdobeDC.View.Enum.CallbackType.EVENT_LISTENER,
-        function(event: { type: string; data?: { selections?: unknown } }) {
-          console.log("Adobe PDF Event:", event.type, (event as { data?: unknown }).data);
+        function(event: any) {
+          console.log("Adobe PDF Event:", event.type, event.data);
           
           if (event.type === 'PREVIEW_SELECTION_END' && event.data?.selections) {
             // Text has been selected
