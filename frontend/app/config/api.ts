@@ -1,7 +1,7 @@
 // API Configuration for Legal Document Demystifier
 
 // Backend API URL - uses environment variable or fallback to Cloud Run service URL
-export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://legal-backend-uawpzg4rzq-el.a.run.app';
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://legal-backend-144935064473.asia-south1.run.app';
 
 export const API_CONFIG = {
   BASE_URL,
