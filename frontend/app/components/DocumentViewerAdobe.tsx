@@ -350,7 +350,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
       );
 
       // Wait for the preview to be ready and get access to viewer APIs
-      previewFilePromise.then((adobeViewer: any) => {
+      previewFilePromise.then(adobeViewer => {
         setAdobeViewer(adobeViewer);
         
         // Extract document text for chat context

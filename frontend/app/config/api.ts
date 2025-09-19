@@ -8,21 +8,13 @@ export const API_CONFIG = {
   
   // API Endpoints
   ENDPOINTS: {
-    // Authentication
-    REGISTER: "/register",
-    LOGIN: "/login",
-    ME: "/me",
-    
-    // Core functionality
     HEALTH: "/health",
     ANALYZE_DOCUMENT: "/analyze-document",
     ANALYZE_TEXT: "/analyze-text",
     SUMMARIZE: "/summarize",
     SUMMARIZE_UPLOAD: "/summarize-upload",
-    UPLOAD_DOCUMENT: "/upload-document",
     CHAT: "/chat",
     EXTRACT_PDF_TEXT: "/extract-pdf-text",
-    EXPLAIN_SELECTION: "/explain-selection",
     ROOT: "/"
   },
   

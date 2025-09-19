@@ -1,28 +1,15 @@
-# Docker ignore file - only exclude what's absolutely necessary
-
-# Dependencies (will be installed during build)
+Dockerfile
+.dockerignore
 node_modules
-
-# Build outputs (will be generated during build)  
-.next
-out
-
-# Development files
-coverage
-.nyc_output
-.vercel
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# VCS
+npm-debug.log
+README.md
+.env
+.env.local
+.env.production.local
+.env.staging.local
 .git
 .gitignore
-
-# Local environment files
-.env.local
-.env.*.local
+.next
+.vercel
+coverage
+.nyc_output

@@ -5,10 +5,18 @@ import { Upload, FileText, Bot, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import Header from "./components/Header";
 import DocumentViewer from "./components/DocumentViewerAdobe";
-import AnalysisPanel from "./components/AnalysisPanel";
-import ChatInterface from "./components/ChatInterface";
 import WorkspaceSidebar from "./components/WorkspaceSidebar";
 import SynapsePanel from "./components/SynapsePanel";
+
+// Local type to avoid missing module and DOM `Document` conflicts
+type WorkspaceDocument = {
+  id: string;
+  name: string;
+  url?: string;
+  type?: string;
+  uploadDate?: string;
+  size?: number;
+};
 
 export default function Dashboard() {
   const [explainedText, setExplainedText] = useState<string>("");
@@ -23,8 +31,9 @@ export default function Dashboard() {
     // Reset after a brief moment to allow the chat component to process it
     setTimeout(() => setExplainedText(""), 100);
   };
+  // (Removed misplaced import statement)
 
-  const handleDocumentSelect = (document: any) => {
+  const handleDocumentSelect = (document: WorkspaceDocument) => {
     if (document.url) {
       setSelectedDocument({
         url: document.url,
@@ -35,29 +44,29 @@ export default function Dashboard() {
 
   if (showUploadDemo) {
     return (
-      <div className="h-screen bg-white flex flex-col overflow-hidden">
+  <div className="h-screen bg-white flex flex-col overflow-hidden">
         {/* Header */}
         <Header />
 
         {/* Main Three-Panel Layout */}
-        <div className="flex-1 overflow-hidden flex flex-row">
-          {/* Left Panel - Workspace Sidebar (fixed width) */}
-          <div className="w-[320px] min-w-[320px] bg-gray-50 border-r border-gray-200 h-full overflow-hidden">
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+          {/* Left Panel - Workspace Sidebar */}
+          <div className="order-2 md:order-1 md:w-[20%] md:min-w-[280px] bg-gray-50 border-t md:border-t-0 md:border-r border-gray-200">
             <WorkspaceSidebar onDocumentSelect={handleDocumentSelect} />
           </div>
 
-          {/* Center Panel - Document Viewer (flexible) */}
-          <div className="flex-1 min-w-0 bg-white h-full overflow-hidden">
-            <DocumentViewer
+          {/* Center Panel - Document Viewer */}
+          <div className="order-1 md:order-2 md:w-[50%] md:min-w-[400px] bg-white min-h-[40vh] md:min-h-0">
+            <DocumentViewer 
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
-              onExplainText={handleExplainText}
+              onExplainText={handleExplainText} 
             />
           </div>
 
-          {/* Right Panel - Synapse Analysis (fixed width) */}
-          <div className="w-[380px] min-w-[360px] bg-gray-50 border-l border-gray-200 h-full overflow-hidden">
-            <SynapsePanel
+          {/* Right Panel - Synapse Analysis */}
+          <div className="order-3 md:order-3 md:w-[30%] md:min-w-[320px] bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200">
+            <SynapsePanel 
               explainedText={explainedText}
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
@@ -98,14 +107,6 @@ export default function Dashboard() {
               <span>Upload Document</span>
             </Link>
             
-            <Link 
-              href="/compare"
-              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center space-x-2 shadow-lg hover:shadow-xl"
-            >
-              <ArrowRight className="w-5 h-5 rotate-90" />
-              <span>Compare Documents</span>
-            </Link>
-            
             <button
               onClick={() => setShowUploadDemo(true)}
               className="border border-gray-300 text-gray-700 px-8 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center space-x-2"
@@ -116,7 +117,7 @@ export default function Dashboard() {
           </div>
 
           {/* Features Grid */}
-          <div className="grid md:grid-cols-4 gap-8 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8 max-w-3xl mx-auto">
             <div className="text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
                 <Upload className="w-6 h-6 text-blue-600" />
@@ -139,17 +140,7 @@ export default function Dashboard() {
             
             <div className="text-center">
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <ArrowRight className="w-6 h-6 text-purple-600 rotate-90" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Smart Comparison</h3>
-              <p className="text-gray-600 text-sm">
-                Compare document versions to identify meaningful changes
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <FileText className="w-6 h-6 text-orange-600" />
+                <FileText className="w-6 h-6 text-purple-600" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Clear Insights</h3>
               <p className="text-gray-600 text-sm">
