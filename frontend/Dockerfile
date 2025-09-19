@@ -4,21 +4,19 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for Node.js packages
 RUN apk add --no-cache libc6-compat
 
-# Debug: Check what files are in the build context
-RUN echo "=== BUILD CONTEXT DEBUG ===" && \
-    echo "Current directory:" && pwd && \
-    echo "Root directory contents:" && ls -la / && \
-    echo "Current working directory contents:" && ls -la . && \
-    echo "Looking for package files:" && find / -name "package.json" 2>/dev/null || echo "No package.json found"
-
-# Copy package files explicitly (these should be in the build context root)
+# Copy package files first for better Docker layer caching
+# When using `cd frontend && gcloud run deploy --source .`, 
+# the build context is the frontend directory
 COPY package.json package-lock.json ./
 
-# Install all dependencies (including dev dependencies for build)
+# Install dependencies (including dev dependencies needed for build)
 RUN npm ci
+
+# Copy all source code
+COPY . .
 
 # Copy all application source
 COPY . .

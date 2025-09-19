@@ -94,8 +94,10 @@ jobs:
         id: 'deploy-frontend'
         timeout-minutes: 20
         run: |
+          # Change to frontend directory and deploy from there
+          cd frontend
           gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
-            --source ./frontend \
+            --source . \
             --region ${{ env.REGION }} \
             --platform managed \
             --allow-unauthenticated \
