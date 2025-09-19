@@ -37,12 +37,13 @@ on:
 env:
   PROJECT_ID: 'demystifier-ai' # Your Google Cloud project ID
   REGION: 'asia-south1' # Your deployment region
-  SERVICE: 'legal-backend' # Your Cloud Run service name
+  BACKEND_SERVICE: 'legal-backend' # Your Cloud Run backend service name
+  FRONTEND_SERVICE: 'legal-frontend' # Your Cloud Run frontend service name
 
 jobs:
   deploy:
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     permissions:
       contents: 'read'
@@ -66,10 +67,11 @@ jobs:
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@v2'
 
-      - name: 'Deploy to Cloud Run'
+      - name: 'Deploy Backend to Cloud Run'
+        id: 'deploy-backend'
         timeout-minutes: 20
         run: |
-          gcloud run deploy ${{ env.SERVICE }} \
+          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
             --source ./backend \
             --region ${{ env.REGION }} \
             --platform managed \
@@ -81,7 +83,38 @@ jobs:
             --timeout 900 \
             --set-env-vars PYTHONPATH=/app
 
+      - name: 'Get Backend URL'
+        id: 'get-backend-url'
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} --region=${{ env.REGION }} --format="value(status.url)")
+          echo "BACKEND_URL=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "Backend URL: $BACKEND_URL"
+
+      - name: 'Deploy Frontend to Cloud Run'
+        id: 'deploy-frontend'
+        timeout-minutes: 20
+        run: |
+          gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
+            --source ./frontend \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 3000 \
+            --cpu 1 \
+            --memory 1Gi \
+            --max-instances 10 \
+            --timeout 900 \
+            --set-env-vars NEXT_PUBLIC_API_URL=${{ steps.get-backend-url.outputs.BACKEND_URL }},NODE_ENV=production
+
+      - name: 'Get Frontend URL'
+        id: 'get-frontend-url'
+        run: |
+          FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region=${{ env.REGION }} --format="value(status.url)")
+          echo "FRONTEND_URL=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend URL: $FRONTEND_URL"
+
       # If required, use the Cloud Run URL output in later steps
       - name: 'Show output'
         run: |-
-          echo ${{ steps.deploy.outputs.url }}
+          echo "Backend URL: ${{ steps.get-backend-url.outputs.BACKEND_URL }}"
+          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.FRONTEND_URL }}"
