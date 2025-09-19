@@ -1,8 +1,6 @@
 # Use Node.js Alpine image
 FROM node:18-alpine
 
-# Set working directory
-WORKDIR /app
 
 # Copy package files first for better layer caching
 COPY package.json package-lock.json* ./
