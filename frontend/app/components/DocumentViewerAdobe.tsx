@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useId } from "react";
-import { FileText } from "lucide-react";
+import { FileText, MessageSquare, X } from "lucide-react";
 
 // Adobe PDF Embed API Configuration
 const ADOBE_API_KEY =
@@ -14,10 +14,85 @@ interface DocumentViewerProps {
   onExplainText: (text: string) => void;
 }
 
+interface ExplainTooltipProps {
+  x: number;
+  y: number;
+  selectedText: string;
+  onExplain: (text: string) => void;
+  onClose: () => void;
+}
+
 declare global {
   interface Window {
     AdobeDC: any;
   }
+}
+
+function ExplainTooltip({ x, y, selectedText, onExplain, onClose }: ExplainTooltipProps) {
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  return (
+    <div 
+      ref={tooltipRef}
+      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs animate-in fade-in duration-200"
+      style={{ 
+        left: Math.min(x, window.innerWidth - 320), 
+        top: Math.max(y - 100, 10) 
+      }}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <div className="text-xs text-gray-600 line-clamp-3 pr-2">
+          "{selectedText.length > 100 ? selectedText.substring(0, 100) + "..." : selectedText}"
+        </div>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+      <div className="flex space-x-2">
+        <button
+          onClick={() => {
+            onExplain(selectedText);
+            onClose();
+          }}
+          className="flex items-center space-x-1 bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+        >
+          <MessageSquare className="w-3 h-3" />
+          <span>Explain this</span>
+        </button>
+        <button
+          onClick={onClose}
+          className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-md text-sm transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewerProps) => {
@@ -25,9 +100,32 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [adobeView, setAdobeView] = useState<any>(null);
+  const [selectedText, setSelectedText] = useState("");
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const [adobeViewer, setAdobeViewer] = useState<any>(null);
   const reactId = useId();
   const viewerId = `adobe-dc-view-${reactId}`;
   const sdkReadyRef = useRef(false);
+  const selectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const closeTooltip = () => {
+    setTooltipPosition(null);
+    setSelectedText("");
+  };
+
+  const handleExplainText = (text: string) => {
+    onExplainText(text);
+    closeTooltip();
+  };
+
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      if (selectionIntervalRef.current) {
+        clearInterval(selectionIntervalRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Dispose previous instance
@@ -108,7 +206,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
         divId: viewerId
       });
 
-      await adobeDCView.previewFile(
+      const previewFilePromise = adobeDCView.previewFile(
         {
           content: { promise: filePromise },
           metaData: { fileName: filename }
@@ -127,44 +225,96 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
           showPrintPDF: true,
           enableFormFilling: true,
           includePDFAnnotations: true,
+          enableFilePreviewEvents: true,
+          focusOnRendering: false
         }
       );
 
-      // Text selection callback (guard for SDKs that don't expose this enum)
-      const cbEnum = window.AdobeDC?.View?.Enum?.CallbackType;
-      if (cbEnum) {
-        // Try to find any selection-related callbacks the SDK exposes
-        const keys = Object.keys(cbEnum);
-        const selectionKeys = keys.filter((k) => /SELECT|SELECTION|FRAGMENT/i.test(k));
-
-        const handleSelection = (event: any) => {
-          const text =
-            event?.data?.text ||
-            event?.data?.selectedText ||
-            event?.dataPayload?.text ||
-            event?.dataPayload?.selectedText;
-          if (text && typeof text === "string" && text.trim()) {
-            onExplainText(text.trim());
-          }
-        };
-
-        if (selectionKeys.length > 0) {
-          // Register to all selection-like callbacks defensively
-          selectionKeys.forEach((k) => {
-            try {
-              adobeDCView.registerCallback((cbEnum as any)[k], handleSelection, {
-                enableFilePreviewEvents: true,
+      // Wait for the preview to be ready and get access to viewer APIs
+      previewFilePromise.then(adobeViewer => {
+        setAdobeViewer(adobeViewer);
+        
+        // Set up text selection monitoring
+        adobeViewer.getAPIs().then((apis: any) => {
+          
+          // Set up a periodic check for selected content
+          const checkSelection = () => {
+            apis.getSelectedContent()
+              .then((result: any) => {
+                if (result && result.data && result.data.trim()) {
+                  const selection = window.getSelection();
+                  if (selection && selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const rect = range.getBoundingClientRect();
+                    
+                    // Only show tooltip if we have a valid selection and position
+                    if (rect.width > 0 && rect.height > 0) {
+                      setSelectedText(result.data.trim());
+                      setTooltipPosition({
+                        x: rect.left + (rect.width / 2),
+                        y: rect.top + window.scrollY
+                      });
+                    }
+                  }
+                } else {
+                  // No selection, hide tooltip
+                  setTooltipPosition(null);
+                  setSelectedText("");
+                }
+              })
+              .catch(() => {
+                // API call failed, probably no selection
+                setTooltipPosition(null);
+                setSelectedText("");
               });
-            } catch (e) {
-              // ignore unsupported keys
+          };
+
+          // Check for selection changes every 500ms
+          selectionIntervalRef.current = setInterval(checkSelection, 500);
+        });
+      });
+
+      // Register event listeners for file preview events
+      const eventOptions = {
+        enableFilePreviewEvents: true,
+        listenOn: [
+          window.AdobeDC.View.Enum.FilePreviewEvents.PREVIEW_SELECTION_END,
+          window.AdobeDC.View.Enum.FilePreviewEvents.PREVIEW_PAGE_CLICK,
+          window.AdobeDC.View.Enum.FilePreviewEvents.PREVIEW_DOCUMENT_CLICK
+        ]
+      };
+
+      adobeDCView.registerCallback(
+        window.AdobeDC.View.Enum.CallbackType.EVENT_LISTENER,
+        function(event: any) {
+          console.log("Adobe PDF Event:", event.type, event.data);
+          
+          if (event.type === 'PREVIEW_SELECTION_END' && event.data?.selections) {
+            // Text has been selected
+            const selection = window.getSelection();
+            if (selection && selection.toString().trim()) {
+              const range = selection.getRangeAt(0);
+              const rect = range.getBoundingClientRect();
+              
+              setSelectedText(selection.toString().trim());
+              setTooltipPosition({
+                x: rect.left + (rect.width / 2),
+                y: rect.top + window.scrollY
+              });
             }
-          });
-        } else {
-          console.warn(
-            "Adobe Embed SDK: No selection-related callback types exposed; selection-to-chat disabled."
-          );
-        }
-      }
+          } else if (event.type === 'PREVIEW_PAGE_CLICK' || event.type === 'PREVIEW_DOCUMENT_CLICK') {
+            // Clear selection when clicking elsewhere
+            setTimeout(() => {
+              const selection = window.getSelection();
+              if (!selection || !selection.toString().trim()) {
+                setTooltipPosition(null);
+                setSelectedText("");
+              }
+            }, 100);
+          }
+        },
+        eventOptions
+      );
 
       setAdobeView(adobeDCView);
       setIsLoading(false);
@@ -208,6 +358,17 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
           className="w-full h-full"
           style={{ minHeight: '600px' }}
         />
+
+        {/* Explain Tooltip */}
+        {tooltipPosition && selectedText && (
+          <ExplainTooltip
+            x={tooltipPosition.x}
+            y={tooltipPosition.y}
+            selectedText={selectedText}
+            onExplain={handleExplainText}
+            onClose={closeTooltip}
+          />
+        )}
       </div>
     </div>
   );
