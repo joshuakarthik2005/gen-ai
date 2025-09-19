@@ -1,17 +1,8 @@
 "use client";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@radix-ui/react-avatar";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@radix-ui/react-dropdown-menu";
-import { Settings, LogOut, User, FileText } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
+import { Settings, User, FileText } from "lucide-react";
 
 export default function Header() {
-  const { user, logout, isAuthenticated } = useAuth();
-
-  const handleLogout = () => {
-    logout();
-  };
-
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -19,6 +10,12 @@ export default function Header() {
       .join("")
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  // Default user info for demo
+  const user = {
+    full_name: "Joshua Karthik",
+    email: "joshuakarthik2005@gmail.com"
   };
 
   return (
@@ -32,43 +29,15 @@ export default function Header() {
       </div>
 
       {/* User Profile */}
-      {isAuthenticated && user ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg p-2 transition-colors">
-              <div className="text-right">
-                <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
-                <div className="text-xs text-gray-500">{user.email}</div>
-              </div>
-              <Avatar className="w-8 h-8">
-                <AvatarFallback className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                  {getInitials(user.full_name)}
-                </AvatarFallback>
-              </Avatar>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-1">
-            <DropdownMenuItem className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded-md cursor-pointer">
-              <User className="w-4 h-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded-md cursor-pointer">
-              <Settings className="w-4 h-4" />
-              <span>Settings</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="my-1 h-px bg-gray-200" />
-            <DropdownMenuItem 
-              onClick={handleLogout}
-              className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded-md cursor-pointer text-red-600"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Sign out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <div className="text-sm text-gray-500">Not authenticated</div>
-      )}
+      <div className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg p-2 transition-colors">
+        <div className="text-right">
+          <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
+          <div className="text-xs text-gray-500">{user.email}</div>
+        </div>
+        <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+          {getInitials(user.full_name)}
+        </div>
+      </div>
     </header>
   );
 }

@@ -4,6 +4,17 @@
 /* @import "react-pdf/dist/Page/AnnotationLayer.css"; */
 /* @import "react-pdf/dist/Page/TextLayer.css"; */
 
+/* Reset default margins and padding */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 :root {
   /* ClarityLegal Color Palette */
   --primary-deep-blue: #0A2540;

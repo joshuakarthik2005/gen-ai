@@ -9,10 +9,8 @@ import AnalysisPanel from "./components/AnalysisPanel";
 import ChatInterface from "./components/ChatInterface";
 import WorkspaceSidebar from "./components/WorkspaceSidebar";
 import SynapsePanel from "./components/SynapsePanel";
-import ProtectedRoute from "./components/ProtectedRoute";
-import { useAuth } from "./contexts/AuthContext";
 
-function DashboardContent() {
+export default function Dashboard() {
   const [explainedText, setExplainedText] = useState<string>("");
   const [showUploadDemo, setShowUploadDemo] = useState(true); // Default to true to show the new interface
   const [selectedDocument, setSelectedDocument] = useState({
@@ -42,24 +40,24 @@ function DashboardContent() {
         <Header />
 
         {/* Main Three-Panel Layout */}
-        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-          {/* Left Panel - Workspace Sidebar */}
-          <div className="order-2 md:order-1 md:w-[20%] md:min-w-[280px] bg-gray-50 border-t md:border-t-0 md:border-r border-gray-200">
+        <div className="flex-1 overflow-hidden flex flex-row">
+          {/* Left Panel - Workspace Sidebar (fixed width) */}
+          <div className="w-[320px] min-w-[320px] bg-gray-50 border-r border-gray-200 h-full overflow-hidden">
             <WorkspaceSidebar onDocumentSelect={handleDocumentSelect} />
           </div>
 
-          {/* Center Panel - Document Viewer */}
-          <div className="order-1 md:order-2 md:w-[50%] md:min-w-[400px] bg-white min-h-[40vh] md:min-h-0">
-            <DocumentViewer 
+          {/* Center Panel - Document Viewer (flexible) */}
+          <div className="flex-1 min-w-0 bg-white h-full overflow-hidden">
+            <DocumentViewer
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
-              onExplainText={handleExplainText} 
+              onExplainText={handleExplainText}
             />
           </div>
 
-          {/* Right Panel - Synapse Analysis */}
-          <div className="order-3 md:order-3 md:w-[30%] md:min-w-[320px] bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200">
-            <SynapsePanel 
+          {/* Right Panel - Synapse Analysis (fixed width) */}
+          <div className="w-[380px] min-w-[360px] bg-gray-50 border-l border-gray-200 h-full overflow-hidden">
+            <SynapsePanel
               explainedText={explainedText}
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
@@ -78,7 +76,7 @@ function DashboardContent() {
       {/* Hero Section */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-20 h-20 bg-gradient-to-br from-primary-blue to-accent rounded-full flex items-center justify-center mx-auto mb-6">
             <FileText className="w-10 h-10 text-white" />
           </div>
           
@@ -94,7 +92,7 @@ function DashboardContent() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
             <Link 
               href="/upload"
-              className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center space-x-2 shadow-lg hover:shadow-xl"
+              className="bg-accent text-white px-8 py-3 rounded-lg font-medium hover:bg-accent/90 transition-colors flex items-center space-x-2 shadow-lg hover:shadow-xl"
             >
               <Upload className="w-5 h-5" />
               <span>Upload Document</span>
@@ -144,13 +142,5 @@ function DashboardContent() {
         </div>
       </div>
     </div>
-  );
-}
-
-export default function Dashboard() {
-  return (
-    <ProtectedRoute>
-      <DashboardContent />
-    </ProtectedRoute>
   );
 }
