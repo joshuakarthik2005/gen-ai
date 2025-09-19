@@ -2,10 +2,8 @@
 const nextConfig = {
   output: 'standalone',
   outputFileTracingRoot: __dirname,
-  experimental: {
-    outputFileTracingIncludes: {
-      '/': ['./public/**/*'],
-    }
+  outputFileTracingIncludes: {
+    '/': ['./public/**/*'],
   }
 };
 
