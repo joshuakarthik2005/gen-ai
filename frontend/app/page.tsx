@@ -4,70 +4,22 @@ import { useState } from "react";
 import { Upload, FileText, Bot, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import Header from "./components/Header";
-import DocumentViewer from "./components/DocumentViewerAdobe";
-import AnalysisPanel from "./components/AnalysisPanel";
-import ChatInterface from "./components/ChatInterface";
-import WorkspaceSidebar from "./components/WorkspaceSidebar";
-import SynapsePanel from "./components/SynapsePanel";
+import DocumentDashboard from "./components/DocumentDashboard";
 
 export default function Dashboard() {
-  const [explainedText, setExplainedText] = useState<string>("");
-  const [showUploadDemo, setShowUploadDemo] = useState(true); // Default to true to show the new interface
-  const [selectedDocument, setSelectedDocument] = useState({
-    url: "https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf",
-    name: "Sample Employment Agreement"
-  });
+  const [showDashboard, setShowDashboard] = useState(true); // Show dashboard by default
 
-  const handleExplainText = (text: string) => {
-    setExplainedText(text);
-    // Reset after a brief moment to allow the chat component to process it
-    setTimeout(() => setExplainedText(""), 100);
-  };
-
-  const handleDocumentSelect = (document: any) => {
-    if (document.url) {
-      setSelectedDocument({
-        url: document.url,
-        name: document.name
-      });
-    }
-  };
-
-  if (showUploadDemo) {
+  // If showing dashboard, render the three-column layout
+  if (showDashboard) {
     return (
-  <div className="h-screen bg-white flex flex-col overflow-hidden">
-        {/* Header */}
-        <Header />
-
-        {/* Main Three-Panel Layout */}
-        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-          {/* Left Panel - Workspace Sidebar */}
-          <div className="order-2 md:order-1 md:w-[20%] md:min-w-[280px] bg-gray-50 border-t md:border-t-0 md:border-r border-gray-200">
-            <WorkspaceSidebar onDocumentSelect={handleDocumentSelect} />
-          </div>
-
-          {/* Center Panel - Document Viewer */}
-          <div className="order-1 md:order-2 md:w-[50%] md:min-w-[400px] bg-white min-h-[40vh] md:min-h-0">
-            <DocumentViewer 
-              documentUrl={selectedDocument.url}
-              filename={selectedDocument.name}
-              onExplainText={handleExplainText} 
-            />
-          </div>
-
-          {/* Right Panel - Synapse Analysis */}
-          <div className="order-3 md:order-3 md:w-[30%] md:min-w-[320px] bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200">
-            <SynapsePanel 
-              explainedText={explainedText}
-              documentUrl={selectedDocument.url}
-              filename={selectedDocument.name}
-            />
-          </div>
-        </div>
-      </div>
+      <DocumentDashboard
+        documentUrl="https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf"
+        filename="Sample Employment Agreement"
+      />
     );
   }
 
+  // Landing page (if user chooses to go back)
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
       {/* Header */}
@@ -99,7 +51,7 @@ export default function Dashboard() {
             </Link>
             
             <button
-              onClick={() => setShowUploadDemo(true)}
+              onClick={() => setShowDashboard(true)}
               className="border border-gray-300 text-gray-700 px-8 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center space-x-2"
             >
               <span>View Demo</span>
