@@ -1,4 +1,4 @@
-# Use the official Node.js image
+# Use the official Node.js image  
 FROM node:18-alpine
 
 # Set working directory
@@ -7,16 +7,16 @@ WORKDIR /app
 # Install system dependencies
 RUN apk add --no-cache libc6-compat
 
-# Copy package files first for better caching
-COPY package.json package-lock.json* ./
+# Copy package files for dependency installation
+COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production=false
+# Install all dependencies (including dev dependencies for build)
+RUN npm ci
 
-# Copy all source files
+# Copy all application source
 COPY . .
 
-# Set build environment variables
+# Set environment variables
 ENV NEXT_PUBLIC_API_URL=https://legal-backend-144935064473.asia-south1.run.app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -25,21 +25,15 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-# Change ownership of the app directory
+# Change ownership and switch to non-root user
 RUN chown -R nextjs:nodejs /app
-
-# Switch to non-root user
 USER nextjs
 
 # Expose port
 EXPOSE 3000
-
-# Set runtime environment variables
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
 
 # Start the application
 CMD ["npm", "start"]
