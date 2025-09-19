@@ -114,11 +114,34 @@ def initialize_vertex_ai():
 
 def create_legal_analysis_prompt(legal_text: str) -> str:
     """Create a detailed prompt for the Gemini model"""
-    prompt = f"""You are an expert lawyer who specializes in explaining complex legal documents to non-lawyers. Analyze the following document. 
+    prompt = f"""You are an expert lawyer who specializes in explaining complex legal documents to non-lawyers. Analyze the following document using proper markdown formatting.
 
-First, provide a one-paragraph summary in simple, clear English. 
+Format your response EXACTLY as follows:
 
-Second, identify and list the 3 most important clauses a person should be aware of and explain the risks or obligations for each. 
+# Document Analysis - Plain English Explanation
+
+## **Summary:**
+Provide a clear one-paragraph summary in simple, everyday language.
+
+## **Key Clauses & Important Points:**
+
+### **1. [Clause Name/Topic]:**
+- **What it means:** [Simple explanation]
+- **Your obligations:** [What you must do]
+- **Risks/Consequences:** [What happens if violated]
+
+### **2. [Clause Name/Topic]:**
+- **What it means:** [Simple explanation]
+- **Your obligations:** [What you must do]
+- **Risks/Consequences:** [What happens if violated]
+
+### **3. [Clause Name/Topic]:**
+- **What it means:** [Simple explanation]
+- **Your obligations:** [What you must do]
+- **Risks/Consequences:** [What happens if violated]
+
+## **Bottom Line:**
+Provide a brief, practical takeaway in one or two sentences.
 
 Document: {legal_text}"""
     
@@ -374,14 +397,38 @@ def create_summary_prompt(legal_text: str) -> str:
     """Create a prompt for summarizing legal documents in layman terms"""
     prompt = f"""You are an expert lawyer who specializes in explaining complex legal documents to non-lawyers. 
 
-Provide a clear, concise summary of the following legal document in simple, everyday language that anyone can understand. Focus on:
+Provide a clear, well-formatted summary using proper markdown formatting. Format your response EXACTLY as follows:
 
-1. What this document is about (the main purpose)
-2. Who are the parties involved and their roles
-3. Key obligations, rights, and responsibilities for each party
-4. Important deadlines, dates, or time-sensitive elements
-5. Potential risks or consequences if the agreement is violated
-6. Any important conditions or requirements that must be met
+# [Document Type] - Plain English Explanation
+
+[Brief introductory sentence about what this document is]
+
+## **What it's about:**
+[Main purpose and scope of the document]
+
+## **Who's involved:**
+[Parties involved and their roles]
+
+## **Your rights and responsibilities:**
+[What you're entitled to and what you must do]
+* [Specific responsibility 1]
+* [Specific responsibility 2]
+* [Specific responsibility 3]
+
+## **Other party's rights and responsibilities:**
+[What the other party can do and must do]
+
+## **Important deadlines:**
+[Any time-sensitive elements or deadlines]
+
+## **Risks/Consequences of violating the agreement:**
+[What happens if terms are not met]
+
+## **Important conditions:**
+[Key conditions or requirements that must be met]
+
+## **Bottom Line:**
+[Practical takeaway in simple terms]
 
 Write this as if you're explaining it to a friend who has no legal background. Avoid legal jargon and use plain English.
 
