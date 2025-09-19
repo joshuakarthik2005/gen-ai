@@ -13,6 +13,8 @@ export const API_CONFIG = {
     ANALYZE_TEXT: "/analyze-text",
     SUMMARIZE: "/summarize",
     SUMMARIZE_UPLOAD: "/summarize-upload",
+    CHAT: "/chat",
+    EXTRACT_PDF_TEXT: "/extract-pdf-text",
     ROOT: "/"
   },
   

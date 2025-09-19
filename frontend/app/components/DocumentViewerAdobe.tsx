@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useId } from "react";
-import { FileText, MessageSquare, X } from "lucide-react";
+import { FileText, MessageSquare, X, Send, Bot, User } from "lucide-react";
+import { API_CONFIG, getApiUrl } from "../config/api";
 
 // Adobe PDF Embed API Configuration
 const ADOBE_API_KEY =
@@ -20,6 +21,13 @@ interface ExplainTooltipProps {
   selectedText: string;
   onExplain: (text: string) => void;
   onClose: () => void;
+}
+
+interface ChatMessage {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
 }
 
 declare global {
@@ -103,6 +111,20 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
   const [selectedText, setSelectedText] = useState("");
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [adobeViewer, setAdobeViewer] = useState<any>(null);
+  
+  // Chat-related states
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [currentMessage, setCurrentMessage] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [documentText, setDocumentText] = useState(""); // Store document text for context
+
+  // Debug: Add a test message to verify UI rendering
+  useEffect(() => {
+    console.log('Current chat messages:', chatMessages);
+    console.log('Chat open:', isChatOpen);
+  }, [chatMessages, isChatOpen]);
+  
   const reactId = useId();
   const viewerId = `adobe-dc-view-${reactId}`;
   const sdkReadyRef = useRef(false);
@@ -118,6 +140,103 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
     closeTooltip();
   };
 
+  const extractDocumentText = async () => {
+    try {
+      console.log('Extracting document text from:', documentUrl);
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: documentUrl }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Document text extracted:', data.text?.length || 0, 'characters');
+      setDocumentText(data.text || '');
+    } catch (error) {
+      console.error('Error extracting document text:', error);
+    }
+  };
+
+  const sendChatMessage = async (message: string) => {
+    console.log('sendChatMessage called with:', message);
+    
+    if (!message.trim()) return;
+
+    // Add user message immediately
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      text: message.trim(),
+      isUser: true,
+      timestamp: new Date(),
+    };
+
+    setChatMessages(prev => {
+      const newMessages = [...prev, userMessage];
+      console.log('Updated chat messages after user message:', newMessages);
+      return newMessages;
+    });
+
+    setIsTyping(true);
+
+    try {
+      console.log('Sending request to chat API...');
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.CHAT), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message.trim(),
+          document_text: documentText,
+        }),
+      });
+
+      console.log('Chat API response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Chat API response data:', data);
+
+      const aiMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: data.response || 'I received your message but couldn\'t generate a response.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+
+      setChatMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error sending chat message:', error);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: 'Sorry, I encountered an error. Please try again.',
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage(currentMessage);
+      setCurrentMessage('');
+    }
+  };
+
+  // Chat functions
   // Cleanup effect
   useEffect(() => {
     return () => {
@@ -234,6 +353,9 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
       previewFilePromise.then(adobeViewer => {
         setAdobeViewer(adobeViewer);
         
+        // Extract document text for chat context
+        extractDocumentText();
+        
         // Set up text selection monitoring
         adobeViewer.getAPIs().then((apis: any) => {
           
@@ -318,6 +440,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
 
       setAdobeView(adobeDCView);
       setIsLoading(false);
+      
     } catch (err) {
       console.error("Adobe PDF initialization error:", err);
       setError("Failed to initialize PDF viewer");
@@ -340,9 +463,9 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      {/* PDF Viewer Container - Let Adobe handle the full interface */}
-      <div className="flex-1 relative overflow-hidden min-h-[60vh] md:min-h-0">
+    <div className="h-full flex bg-white">
+      {/* PDF Viewer Container */}
+      <div className="flex-1 relative overflow-hidden">
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
             <div className="text-center">
@@ -369,6 +492,115 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
             onClose={closeTooltip}
           />
         )}
+
+        
+
+      {/* Chat Panel */}
+      <div className={`transition-all duration-300 ease-in-out bg-gray-50 border-l border-gray-200 ${isChatOpen ? 'w-96' : 'w-0'} overflow-hidden`}>
+        {isChatOpen && (
+          <div className="h-full flex flex-col">
+            <div className="p-4 border-b border-gray-200 bg-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Chat with Document</h3>
+                <button
+                  onClick={() => setIsChatOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {chatMessages.length === 0 && (
+                <div className="text-center py-8">
+                  <Bot className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">Start a conversation about the document</p>
+                  <p className="text-xs text-gray-400 mt-1">Ask questions, request summaries, or get explanations</p>
+                </div>
+              )}
+
+              {chatMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`flex items-start space-x-2 max-w-xs lg:max-w-md ${message.isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.isUser ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                      {message.isUser ? (
+                        <User className="w-4 h-4 text-white" />
+                      ) : (
+                        <Bot className="w-4 h-4 text-white" />
+                      )}
+                    </div>
+                    <div className={`px-3 py-2 rounded-lg ${message.isUser ? 'bg-blue-600 text-white' : 'bg-white text-gray-900 border border-gray-200'}`}>
+                      <p className="text-sm">{message.text}</p>
+                      <p className={`text-xs mt-1 ${message.isUser ? 'text-blue-100' : 'text-gray-500'}`}>
+                        {message.timestamp.toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="flex items-start space-x-2 max-w-xs">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                      <Bot className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="px-3 py-2 rounded-lg bg-white border border-gray-200">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-200 bg-white">
+              <button
+                onClick={() => {
+                  const testMessage = "Test message: " + new Date().toLocaleTimeString();
+                  setChatMessages(prev => [...prev, {
+                    id: Date.now().toString(),
+                    text: testMessage,
+                    isUser: true,
+                    timestamp: new Date()
+                  }]);
+                }}
+                className="w-full mb-2 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+              >
+                Test Add Message
+              </button>
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  placeholder="Ask about this document..."
+                  value={currentMessage}
+                  onChange={(e) => setCurrentMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isTyping}
+                />
+                <button
+                  onClick={() => {
+                    sendChatMessage(currentMessage);
+                    setCurrentMessage('');
+                  }}
+                  disabled={!currentMessage.trim() || isTyping}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       </div>
     </div>
   );

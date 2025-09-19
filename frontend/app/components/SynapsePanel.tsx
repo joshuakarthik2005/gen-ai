@@ -38,11 +38,21 @@ interface Analysis {
   type: "explanation" | "insight" | "warning";
 }
 
+interface ChatMessage {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: string;
+}
+
 import { API_CONFIG, getApiUrl } from "../config/api";
 
 const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProps) => {
   const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat">("snippets");
   const [chatMessage, setChatMessage] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [documentText, setDocumentText] = useState("");
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -173,6 +183,100 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
       setIsSummarizing(false);
     }
   };
+
+  // Extract document text for chat context
+  const extractDocumentText = async () => {
+    try {
+      console.log('Extracting document text from:', documentUrl);
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: documentUrl }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Document text extracted:', data.text?.length || 0, 'characters');
+      setDocumentText(data.text || '');
+    } catch (error) {
+      console.error('Error extracting document text:', error);
+      // Set minimal context if extraction fails
+      setDocumentText(`Document: ${filename}\nURL: ${documentUrl}`);
+    }
+  };
+
+  // Send chat message with document context
+  const sendChatMessage = async (message: string) => {
+    if (!message.trim()) return;
+
+    // Add user message immediately
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      text: message.trim(),
+      isUser: true,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatMessage("");
+    setIsTyping(true);
+
+    try {
+      console.log('Sending chat message about document:', filename);
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.CHAT), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message.trim(),
+          document_text: documentText,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Chat API response:', data);
+
+      const aiMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: data.response || 'I received your message but couldn\'t generate a response.',
+        isUser: false,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+
+      setChatMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error sending chat message:', error);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: 'Sorry, I encountered an error. Please try again.',
+        isUser: false,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // Extract document text when component mounts or document changes
+  useEffect(() => {
+    if (documentUrl) {
+      // Clear previous document's chat when switching documents
+      setChatMessages([]);
+      setDocumentText("");
+      extractDocumentText();
+    }
+  }, [documentUrl, filename]);
 
   // Create a simple layman summary from a long analysis string
   const deriveLaymanSummaryFromText = (analysisText: string, fname: string) => {
@@ -340,7 +444,6 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
                 : "text-gray-600 hover:text-gray-900"
             }`}
           >
-            <MessageSquare className="w-4 h-4" />
             <span>Chat</span>
           </button>
         </div>
@@ -456,33 +559,75 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
         {/* Chat Tab */}
         {activeTab === "chat" && (
           <div className="h-full flex flex-col">
-            <div className="flex-1 p-4">
-              <div className="text-center py-8">
-                <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Start a conversation</p>
-                <p className="text-xs text-gray-400 mt-1">Ask questions about the document</p>
-              </div>
+            <div className="flex-1 p-4 overflow-y-auto space-y-4">
+              {chatMessages.length === 0 && (
+                <div className="text-center py-8">
+                  <p className="text-sm text-gray-500">Start a conversation about this document</p>
+                  <p className="text-xs text-gray-400 mt-1">Ask questions about "{filename}"</p>
+                </div>
+              )}
+              
+              {chatMessages.map((message) => (
+                <div key={message.id} className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-lg p-3 ${message.isUser 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-white border border-gray-200 text-gray-900'
+                  }`}>
+                    <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                    <p className={`text-xs mt-1 ${message.isUser ? 'text-blue-100' : 'text-gray-500'}`}>
+                      {message.timestamp}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-white border border-gray-200 rounded-lg p-3 max-w-[85%]">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="p-4 border-t border-gray-200 bg-white">
               <div className="flex space-x-2">
                 <input
                   type="text"
-                  placeholder="Ask about this document..."
+                  placeholder={`Ask about "${filename}"...`}
                   value={chatMessage}
                   onChange={(e) => setChatMessage(e.target.value)}
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      // Handle send message
-                      setChatMessage("");
+                      sendChatMessage(chatMessage);
                     }
                   }}
+                  disabled={isTyping}
                 />
-                <button className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <button 
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => sendChatMessage(chatMessage)}
+                  disabled={!chatMessage.trim() || isTyping}
+                >
                   <Send className="w-4 h-4" />
                 </button>
+              </div>
+              
+              {/* Document status indicator */}
+              <div className="mt-2 text-xs text-gray-500 flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${documentText ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span>
+                  {documentText 
+                    ? `Document loaded (${documentText.length} characters)` 
+                    : 'Loading document context...'
+                  }
+                </span>
               </div>
             </div>
           </div>
