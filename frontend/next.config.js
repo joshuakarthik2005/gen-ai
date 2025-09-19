@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  output: 'standalone',
+  outputFileTracingRoot: __dirname,
+  experimental: {
+    outputFileTracingIncludes: {
+      '/': ['./public/**/*'],
+    }
+  }
 };
 
 module.exports = nextConfig;
