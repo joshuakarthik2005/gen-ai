@@ -9,6 +9,8 @@ const nextConfig = {
   // Optimize for production deployment
   poweredByHeader: false,
   reactStrictMode: true,
+  // Fix workspace root detection
+  outputFileTracingRoot: __dirname,
 };
 
 module.exports = nextConfig;
