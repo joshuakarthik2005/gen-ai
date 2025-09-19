@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Bot, User } from "lucide-react";
 import { BASE_URL } from "../config/api";
+import { useAuth, getAuthHeaders } from "../contexts/AuthContext";
 
 interface Message {
   id: string;
@@ -21,6 +22,7 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { token } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,12 +54,10 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
     try {
       const response = await fetch(`${BASE_URL}/explain-selection`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(token),
         body: JSON.stringify({ 
-          text: text,
-          document_context: documentUrl || "legal document"
+          selected_text: text,
+          document_url: documentUrl || "legal document"
         }),
       });
 
