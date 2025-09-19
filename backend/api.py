@@ -54,6 +54,13 @@ class ExplainSelectionRequest(BaseModel):
     selected_text: str
     document_url: str
 
+class ChatRequest(BaseModel):
+    message: str
+    document_text: str = ""  # Optional: full document text for context
+
+class ExtractRequest(BaseModel):
+    url: str
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Legal Document Demystifier",
@@ -660,6 +667,150 @@ def generate_mock_explanation(text: str) -> str:
     
     else:
         return f"This is a standard legal provision. **Explanation:** The selected text '{text[:100]}...' appears to be a typical contractual clause. Legal documents often use formal language that can be confusing. If you have specific concerns about how this clause might affect you, consider asking for clarification or consulting with a legal professional."
+
+
+@app.post("/extract-pdf-text")
+async def extract_pdf_text(request: ExtractRequest):
+    """
+    Server-side extraction of text from a PDF URL to avoid CORS and provide chat context.
+
+    - **url**: Publicly accessible URL to a PDF
+    """
+    try:
+        import io
+        import requests
+        try:
+            from PyPDF2 import PdfReader
+        except Exception as e:
+            logger.error(f"PyPDF2 import failed: {e}")
+            raise HTTPException(status_code=500, detail="PDF processing not available on server")
+
+        url = (request.url or "").strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="Missing 'url'")
+
+        # Fetch the PDF bytes
+        resp = requests.get(url, timeout=20)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"Failed to fetch PDF (status {resp.status_code})")
+
+        # Basic content-type check (not strictly required)
+        ctype = resp.headers.get("content-type", "")
+        if "pdf" not in ctype.lower():
+            logger.warning(f"Content-Type not PDF: {ctype}. Attempting to parse anyway.")
+
+        # Extract text
+        try:
+            reader = PdfReader(io.BytesIO(resp.content))
+            text_parts = []
+            for page in reader.pages:
+                try:
+                    page_text = page.extract_text() or ""
+                except Exception:
+                    page_text = ""
+                if page_text:
+                    text_parts.append(page_text)
+            full_text = "\n".join(text_parts)
+        except Exception as e:
+            logger.error(f"PDF extraction error: {e}")
+            raise HTTPException(status_code=400, detail="Unable to extract text from PDF. It may be scanned or encrypted.")
+
+        if not full_text.strip():
+            raise HTTPException(status_code=400, detail="No extractable text found in PDF.")
+
+        # Truncate to a manageable size for chat context
+        max_chars = 50000
+        truncated = full_text[:max_chars]
+
+        return JSONResponse(status_code=200, content={
+            "text": truncated,
+            "length": len(truncated)
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in extract_pdf_text: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    """
+    Chat with AI about the document
+    
+    - **message**: User's question about the document
+    - **document_text**: Optional full document text for context
+    """
+    try:
+        message = request.message.strip()
+        document_text = request.document_text.strip()
+        
+        if not message:
+            raise HTTPException(status_code=400, detail="No message provided")
+        
+        # Initialize Vertex AI if not already done
+        global vertex_ai_initialized, model
+        if not vertex_ai_initialized:
+            if not initialize_vertex_ai():
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "response": "I'm sorry, but I'm currently unable to access the AI service. Please try again later.",
+                        "model_used": "fallback"
+                    }
+                )
+        
+        # Create a contextual prompt for the chat
+        if document_text:
+            # Include document context in the prompt
+            prompt = f"""You are a helpful legal assistant. A user is asking questions about a legal document. 
+Please provide clear, helpful answers in plain English, avoiding legal jargon when possible.
+
+Document context (first 5000 characters):
+{document_text[:5000]}
+
+User question: {message}
+
+Please provide a helpful response about the document or legal concepts mentioned."""
+        else:
+            # General legal assistance without document context
+            prompt = f"""You are a helpful legal assistant. Please answer the user's question about legal matters in plain English, avoiding jargon when possible.
+
+User question: {message}
+
+Please provide a helpful, informative response."""
+        
+        try:
+            # Generate response using Gemini
+            logger.info("Sending chat request to Gemini...")
+            response = model.generate_content(prompt)
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "response": response.text,
+                    "model_used": "gemini-1.5-pro"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating chat response: {str(e)}")
+            # Provide a helpful fallback response
+            fallback_response = f"I understand you're asking about: '{message}'. While I'm experiencing technical difficulties right now, I'd recommend consulting with a legal professional for specific advice about your document or situation."
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "response": fallback_response,
+                    "model_used": "fallback"
+                }
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in chat_endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
 if __name__ == "__main__":
