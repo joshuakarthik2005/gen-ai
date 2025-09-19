@@ -6,11 +6,6 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  output: 'standalone',
-  outputFileTracingRoot: __dirname,
-  outputFileTracingIncludes: {
-    '/': ['./public/**/*'],
-  }
 };
 
 module.exports = nextConfig;
