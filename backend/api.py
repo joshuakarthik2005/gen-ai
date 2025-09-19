@@ -35,6 +35,15 @@ except ImportError as e:
     def initialize_demo_users():
         pass
 
+# Import comparison router
+try:
+    from comparison_router import router as comparison_router
+    COMPARISON_ENABLED = True
+    logger.info("Document comparison module loaded successfully")
+except ImportError as e:
+    logger.error(f"Failed to import comparison module: {e}")
+    COMPARISON_ENABLED = False
+
 # Import Vertex AI with error handling
 try:
     import vertexai
@@ -93,6 +102,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include comparison router if available
+if COMPARISON_ENABLED:
+    app.include_router(comparison_router)
+    logger.info("Document comparison router included")
 
 # Global variables for Vertex AI configuration
 vertex_ai_initialized = False
@@ -214,6 +228,7 @@ async def root():
         "message": "Legal Document Demystifier API",
         "version": "2.0.0",
         "auth_enabled": True,
+        "comparison_enabled": COMPARISON_ENABLED,
         "endpoints": {
             "/register": "POST - Register a new user account",
             "/login": "POST - Login and get access token",
@@ -226,6 +241,7 @@ async def root():
             "/extract-pdf-text": "POST - Extract text from PDF URL (requires auth)",
             "/explain-selection": "POST - Explain selected text (requires auth)",
             "/chat": "POST - Chat with AI about document (requires auth)",
+            "/api/compare/compare-documents": "POST - Compare two PDF documents semantically (requires auth)",
             "/health": "GET - Check API health status"
         }
     }
