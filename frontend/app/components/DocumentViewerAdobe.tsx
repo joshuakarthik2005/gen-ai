@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useId } from "react";
 import { FileText, MessageSquare, X, Send, Bot, User } from "lucide-react";
 import { API_CONFIG, getApiUrl } from "../config/api";
+import { withAuthHeaders } from "../utils/auth";
 
 // Adobe PDF Embed API Configuration
 const ADOBE_API_KEY =
@@ -143,11 +144,10 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
   const extractDocumentText = async () => {
     try {
       console.log('Extracting document text from:', documentUrl);
+      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ pdf_url: documentUrl }),
       });
 
@@ -186,11 +186,10 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
 
     try {
       console.log('Sending request to chat API...');
+      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.CHAT), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           message: message.trim(),
           document_text: documentText,
