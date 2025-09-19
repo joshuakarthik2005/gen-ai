@@ -160,11 +160,13 @@ cython_debug/
 
 # Google Cloud credentials and service account keys
 service-account-key.json
-*.json
 credentials.json
 key.json
 gcp-key.json
 google-cloud-key.json
+
+# DO NOT ignore package.json files - they are needed for builds!
+# Only ignore specific credential/secret JSON files
 
 # Environment variables
 .env
