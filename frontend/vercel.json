@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://legal-backend-144935064473.asia-south1.run.app"
+  }
+}

@@ -1,36 +1,26 @@
-# Controls files that are uploaded to Google Cloud Build/Run when using --source
-# Syntax matches .gitignore
+# Google Cloud Build ignore file
+# Only exclude large/unnecessary files for build
 
-# Exclude common large/ephemeral folders
+# Large dependencies and build outputs
 node_modules/
 .next/
 .vercel/
 coverage/
 .nyc_output/
 
-# VCS and local env
-.git/
-.gitignore
-.env*
-
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
+pnpm-debug.log*
 
-# DO NOT exclude these build-critical files
-!package.json
-!package-lock.json
-!Dockerfile
-!.dockerignore
-!next.config.js
-!tsconfig.json
-!postcss.config.js
-!tailwind.config.js
-!eslint.config.mjs
+# VCS
+.git/
 
-# Keep application source
-app/**
-public/**
+# Environment files (but keep .env.example)
+.env.local
+.env.production.local
+.env.staging.local
+
+# Keep everything else - package.json, source code, configs, etc.
