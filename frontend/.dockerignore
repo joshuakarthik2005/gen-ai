@@ -1,19 +1,28 @@
-Dockerfile
-.dockerignore
+# Node modules and build outputs
 node_modules
-npm-debug.log
-README.md
-.env
-.env.local
-.env.production.local
-.env.staging.local
-.git
-.gitignore
 .next
-.vercel
+out
 coverage
 .nyc_output
+.vercel
 
-# Make sure package.json is NOT ignored
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Git and environment files
+.git
+.gitignore
+.env
+.env.*
+
+# Do NOT ignore these critical build files
+!Dockerfile
+!.dockerignore
 !package.json
 !package-lock.json
+!pnpm-lock.yaml
+!yarn.lock
