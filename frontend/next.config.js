@@ -9,7 +9,6 @@ const nextConfig = {
   // Optimize for production deployment
   poweredByHeader: false,
   reactStrictMode: true,
-  swcMinify: true,
 };
 
 module.exports = nextConfig;
