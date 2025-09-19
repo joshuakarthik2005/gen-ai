@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef, useId } from "react";
 import { FileText, MessageSquare, X, Send, Bot, User } from "lucide-react";
 import { API_CONFIG, getApiUrl } from "../config/api";
-import { withAuthHeaders } from "../utils/auth";
 
 // Adobe PDF Embed API Configuration
-const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string;
+const ADOBE_API_KEY =
+  (process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string) ||
+  "e3b008974ccc4ac5aacabe3252c01c67";
 
 interface DocumentViewerProps {
   documentUrl: string;

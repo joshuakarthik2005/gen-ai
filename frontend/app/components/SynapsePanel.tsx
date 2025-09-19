@@ -46,7 +46,6 @@ interface ChatMessage {
 }
 
 import { API_CONFIG, getApiUrl } from "../config/api";
-import { withAuthHeaders } from "../utils/auth";
 
 const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProps) => {
   const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat">("snippets");
@@ -189,10 +188,11 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
   const extractDocumentText = async () => {
     try {
       console.log('Extracting document text from:', documentUrl);
-      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ pdf_url: documentUrl }),
       });
 
@@ -228,10 +228,11 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
 
     try {
       console.log('Sending chat message about document:', filename);
-      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.CHAT), {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           message: message.trim(),
           document_text: documentText,
