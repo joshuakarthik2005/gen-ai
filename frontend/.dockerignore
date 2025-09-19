@@ -13,7 +13,3 @@ README.md
 .vercel
 coverage
 .nyc_output
-
-# Make sure package.json is NOT ignored
-!package.json
-!package-lock.json
