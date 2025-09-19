@@ -1,36 +1,85 @@
-# Use the official Node.js image  
-FROM node:18-alpine
+# Adobe Hackathon 2025 - Ultra-Optimized Dockerfile for Synapse-Docs
+# Target: Reduce from ~12GB to ~3-4GB with full functionality preservation
 
-# Copy package files first for better layer caching
-COPY package.json package-lock.json* ./
+# Stage 1: Frontend Build (production-grade with lock file)
+FROM node:18-alpine AS frontend
+WORKDIR /frontend
 
-# Copy package files for dependency installation
-COPY package*.json ./
+# Copy package files for dependency resolution
+COPY frontend/package.json frontend/package-lock.json ./
 
-# Install all dependencies (including dev dependencies for build)
-RUN npm ci
+# Fast, reliable install using committed lock file
+RUN npm ci --silent
 
-# Copy all application source
-COPY . .
-
-# Set environment variables
-ENV NEXT_PUBLIC_API_URL=https://legal-backend-144935064473.asia-south1.run.app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build the application
+# Copy source and build
+COPY frontend/ ./
 RUN npm run build
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+# Clean production install (remove dev dependencies)
+RUN npm ci --silent --only=production
 
-# Change ownership and switch to non-root user
-RUN chown -R nextjs:nodejs /app
-USER nextjs
+# Stage 2: Python Dependencies (optimized compilation)
+FROM python:3.11-slim AS python-deps
+WORKDIR /deps
 
-# Expose port
-EXPOSE 3000
+# Critical: Install minimal build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libc6-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
-# Start the application
-CMD ["npm", "start"]
+# Install to user directory for isolation
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --user --no-warn-script-location \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.6.0+cpu torchvision
+RUN pip install --no-cache-dir --user --no-warn-script-location \
+    -r requirements.txt
+RUN find /root/.local -name "*.pyc" -delete || true && \
+    find /root/.local -name "__pycache__" -exec rm -rf {} + || true
+
+# Stage 3: Minimal Runtime (ultra-slim)
+FROM python:3.11-slim AS runtime
+WORKDIR /app
+
+# Production environment optimization
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH=/root/.local/bin:$PATH \
+    MALLOC_TRIM_THRESHOLD_=100000
+
+# Install absolute minimal runtime libraries + CRITICAL sample script dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    libblas3 \
+    liblapack3 \
+    ffmpeg \
+    espeak-ng \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /tmp/* /var/tmp/*
+
+# Copy optimized Python environment
+COPY --from=python-deps /root/.local /root/.local
+
+# Copy minimal application files only
+COPY backend/app /app/app
+COPY backend/gunicorn_conf.py /app/
+COPY backend/chat_with_llm.py /app/
+COPY backend/generate_audio.py /app/
+COPY backend/preload_models.py /app/
+COPY --from=frontend /frontend/dist /app/static
+
+# Pre-download ML models to avoid download delays at runtime
+RUN python preload_models.py
+
+# Create required directories with proper permissions
+RUN mkdir -p /app/data/audio /app/uploads
+
+# Use optimized startup
+EXPOSE 8080
+CMD ["gunicorn", "-c", "gunicorn_conf.py", "app.main:app"]
