@@ -169,6 +169,8 @@ async def root():
         "endpoints": {
             "/analyze-document": "POST - Upload a legal document for analysis",
             "/analyze-text": "POST - Analyze legal text directly",
+            "/summarize": "POST - Summarize legal text in layman terms",
+            "/summarize-upload": "POST - Upload and summarize a legal document",
             "/health": "GET - Check API health status"
         }
     }
@@ -365,6 +367,182 @@ async def upload_document(file: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.error(f"Unexpected error in upload_document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+def create_summary_prompt(legal_text: str) -> str:
+    """Create a prompt for summarizing legal documents in layman terms"""
+    prompt = f"""You are an expert lawyer who specializes in explaining complex legal documents to non-lawyers. 
+
+Provide a clear, concise summary of the following legal document in simple, everyday language that anyone can understand. Focus on:
+
+1. What this document is about (the main purpose)
+2. Who are the parties involved and their roles
+3. Key obligations, rights, and responsibilities for each party
+4. Important deadlines, dates, or time-sensitive elements
+5. Potential risks or consequences if the agreement is violated
+6. Any important conditions or requirements that must be met
+
+Write this as if you're explaining it to a friend who has no legal background. Avoid legal jargon and use plain English.
+
+Document: {legal_text}"""
+    
+    return prompt
+
+
+def summarize_legal_document(legal_text: str) -> Dict[str, Any]:
+    """Summarize legal text using Gemini model with layman-friendly output"""
+    global vertex_ai_initialized, model
+    
+    # Initialize Vertex AI if not already done
+    if not vertex_ai_initialized:
+        if not initialize_vertex_ai():
+            return {
+                "success": False,
+                "error": "Failed to initialize Vertex AI. Please check your configuration."
+            }
+    
+    try:
+        # Create the summary prompt
+        prompt = create_summary_prompt(legal_text)
+        
+        # Generate response
+        logger.info("Sending summarization request to Gemini...")
+        response = model.generate_content(prompt)
+        
+        return {
+            "success": True,
+            "summary": response.text,
+            "model_used": "gemini-1.5-pro"
+        }
+        
+    except Exception as e:
+        error_msg = f"Error summarizing document: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg
+        }
+
+
+@app.post("/summarize")
+async def summarize_text_endpoint(request: Dict[str, str]):
+    """
+    Summarize legal text in layman-friendly terms
+    
+    - **text**: The legal text to summarize
+    """
+    try:
+        legal_text = request.get("text", "").strip()
+        
+        if not legal_text:
+            raise HTTPException(status_code=400, detail="No text provided")
+        
+        if len(legal_text) > 50000:  # Limit to ~50KB of text for summarization
+            legal_text = legal_text[:50000]
+            logger.warning("Text truncated to 50,000 characters for summarization")
+        
+        # Summarize the text
+        result = summarize_legal_document(legal_text)
+        
+        if result["success"]:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "summary": result["summary"],
+                    "model_used": result["model_used"],
+                    "character_count": len(legal_text)
+                }
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in summarize_text_endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@app.post("/summarize-upload")
+async def summarize_document_endpoint(file: UploadFile = File(...)):
+    """
+    Summarize a legal document from file upload in layman-friendly terms
+    
+    - **file**: Legal document file (txt, pdf, doc, etc.)
+    """
+    try:
+        # Check file type
+        allowed_types = ["text/plain", "application/pdf", "application/msword", 
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+        
+        if file.content_type not in allowed_types:
+            logger.warning(f"Unsupported file type: {file.content_type}, attempting to read anyway")
+        
+        # Read file content
+        content = await file.read()
+        
+        # Handle different file types
+        if file.content_type == "application/pdf":
+            try:
+                # Import PyPDF2 for PDF processing
+                import PyPDF2
+                import io
+                
+                # Create PDF reader object
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+                
+                # Extract text from all pages
+                legal_text = ""
+                for page in pdf_reader.pages:
+                    legal_text += page.extract_text() + "\n"
+                
+                if not legal_text.strip():
+                    raise HTTPException(status_code=400, detail="Could not extract text from PDF. The PDF might be image-based or corrupted.")
+                    
+            except ImportError:
+                raise HTTPException(status_code=500, detail="PDF processing not available. Please upload a text file instead.")
+            except Exception as pdf_error:
+                logger.error(f"PDF processing error: {str(pdf_error)}")
+                raise HTTPException(status_code=400, detail=f"Error processing PDF: {str(pdf_error)}")
+        else:
+            # Handle text files
+            try:
+                legal_text = content.decode('utf-8')
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Unable to decode file content. Please ensure the file is in text format."
+                )
+        
+        # Validate content length
+        if len(legal_text.strip()) == 0:
+            raise HTTPException(status_code=400, detail="File appears to be empty")
+        
+        if len(legal_text) > 50000:  # Limit to ~50KB of text for summarization
+            legal_text = legal_text[:50000]
+            logger.warning("Document truncated to 50,000 characters for summarization")
+        
+        # Summarize the document
+        result = summarize_legal_document(legal_text)
+        
+        if result["success"]:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "filename": file.filename,
+                    "summary": result["summary"],
+                    "model_used": result["model_used"],
+                    "character_count": len(legal_text)
+                }
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in summarize_document_endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
