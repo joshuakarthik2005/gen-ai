@@ -14,17 +14,26 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Import authentication modules
-from auth import (
-    UserCreate, UserLogin, User, Token, 
-    create_user, authenticate_user, create_access_token,
-    get_current_active_user, require_auth, optional_auth,
-    initialize_demo_users, ACCESS_TOKEN_EXPIRE_MINUTES
-)
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import authentication modules with error handling
+try:
+    from auth import (
+        UserCreate, UserLogin, User, Token, 
+        create_user, authenticate_user, create_access_token,
+        get_current_active_user, require_auth, optional_auth,
+        initialize_demo_users, ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    AUTH_ENABLED = True
+    logger.info("Authentication module loaded successfully")
+except ImportError as e:
+    logger.error(f"Failed to import authentication module: {e}")
+    AUTH_ENABLED = False
+    # Define dummy functions to prevent startup failure
+    def initialize_demo_users():
+        pass
 
 # Import Vertex AI with error handling
 try:
@@ -232,6 +241,12 @@ async def register(user: UserCreate):
     - **password**: User's password (minimum 6 characters)
     - **full_name**: User's full name
     """
+    if not AUTH_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service is not available"
+        )
+    
     try:
         # Validate password length
         if len(user.password) < 6:
@@ -940,13 +955,17 @@ Please provide a helpful, informative response."""
 if __name__ == "__main__":
     import uvicorn
     
-    # Get port from environment variable (Cloud Run provides this)
+    # Get port from environment variable (Cloud Run provides this automatically)
     port = int(os.environ.get("PORT", 8000))
     
     logger.info(f"Starting Legal Document Demystifier API on port {port}...")
     
-    # Initialize demo users for testing
-    initialize_demo_users()
+    # Initialize demo users for testing (non-blocking)
+    try:
+        initialize_demo_users()
+        logger.info("Demo users initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize demo users: {e}")
     
     # Try to initialize Vertex AI but don't block startup
     try:
@@ -955,10 +974,12 @@ if __name__ == "__main__":
     except Exception as e:
         logger.warning(f"Vertex AI initialization failed (will retry on first request): {e}")
     
-    # Run the application
+    # Run the application with improved configuration for Cloud Run
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=port,
-        log_level="info"
+        log_level="info",
+        access_log=True,
+        loop="auto"
     )
