@@ -8,11 +8,19 @@ import os
 import logging
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from typing import Dict, Any, Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Import authentication modules
+from auth import (
+    UserCreate, UserLogin, User, Token, 
+    create_user, authenticate_user, create_access_token,
+    get_current_active_user, require_auth, optional_auth,
+    initialize_demo_users, ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -195,15 +203,131 @@ async def root():
     """Root endpoint with API information"""
     return {
         "message": "Legal Document Demystifier API",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "auth_enabled": True,
         "endpoints": {
-            "/analyze-document": "POST - Upload a legal document for analysis",
-            "/analyze-text": "POST - Analyze legal text directly",
-            "/summarize": "POST - Summarize legal text in layman terms",
-            "/summarize-upload": "POST - Upload and summarize a legal document",
+            "/register": "POST - Register a new user account",
+            "/login": "POST - Login and get access token",
+            "/me": "GET - Get current user profile (requires auth)",
+            "/analyze-document": "POST - Upload a legal document for analysis (requires auth)",
+            "/analyze-text": "POST - Analyze legal text directly (requires auth)",
+            "/summarize": "POST - Summarize legal text in layman terms (requires auth)",
+            "/summarize-upload": "POST - Upload and summarize a legal document (requires auth)",
+            "/upload-document": "POST - Upload document to cloud storage (requires auth)",
+            "/extract-pdf-text": "POST - Extract text from PDF URL (requires auth)",
+            "/explain-selection": "POST - Explain selected text (requires auth)",
+            "/chat": "POST - Chat with AI about document (requires auth)",
             "/health": "GET - Check API health status"
         }
     }
+
+
+# Authentication endpoints
+@app.post("/register", response_model=Token)
+async def register(user: UserCreate):
+    """
+    Register a new user account
+    
+    - **email**: User's email address (must be unique)
+    - **password**: User's password (minimum 6 characters)
+    - **full_name**: User's full name
+    """
+    try:
+        # Validate password length
+        if len(user.password) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be at least 6 characters long"
+            )
+        
+        # Create the user
+        new_user = create_user(user)
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": new_user.email},
+            expires_delta=access_token_expires
+        )
+        
+        logger.info(f"New user registered: {new_user.email}")
+        
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
+            user=new_user
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed"
+        )
+
+
+@app.post("/login", response_model=Token)
+async def login(credentials: UserLogin):
+    """
+    Login with email and password
+    
+    - **email**: User's email address
+    - **password**: User's password
+    """
+    try:
+        # Authenticate user
+        user_data = authenticate_user(credentials.email, credentials.password)
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user_data["email"]},
+            expires_delta=access_token_expires
+        )
+        
+        # Convert user data to User model
+        user = User(
+            id=user_data["id"],
+            email=user_data["email"],
+            full_name=user_data["full_name"],
+            created_at=user_data["created_at"],
+            is_active=user_data["is_active"]
+        )
+        
+        logger.info(f"User logged in: {user.email}")
+        
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
+            user=user
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed"
+        )
+
+
+@app.get("/me", response_model=User)
+async def get_current_user_profile(current_user: User = Depends(require_auth)):
+    """
+    Get current user profile (requires authentication)
+    """
+    return current_user
 
 
 @app.get("/health")
@@ -219,9 +343,9 @@ async def health_check():
 
 
 @app.post("/analyze-document")
-async def analyze_document_endpoint(file: UploadFile = File(...)):
+async def analyze_document_endpoint(file: UploadFile = File(...), current_user: User = Depends(require_auth)):
     """
-    Analyze a legal document from file upload
+    Analyze a legal document from file upload (requires authentication)
     
     - **file**: Legal document file (txt, pdf, doc, etc.)
     """
@@ -279,9 +403,9 @@ async def analyze_document_endpoint(file: UploadFile = File(...)):
 
 
 @app.post("/analyze-text")
-async def analyze_text_endpoint(request: Dict[str, str]):
+async def analyze_text_endpoint(request: Dict[str, str], current_user: User = Depends(require_auth)):
     """
-    Analyze legal text directly
+    Analyze legal text directly (requires authentication)
     
     - **text**: The legal text to analyze
     """
@@ -318,9 +442,9 @@ async def analyze_text_endpoint(request: Dict[str, str]):
 
 
 @app.post("/upload-document")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...), current_user: User = Depends(require_auth)):
     """
-    Upload a PDF document to Google Cloud Storage and return a signed URL
+    Upload a PDF document to Google Cloud Storage and return a signed URL (requires authentication)
     
     - **file**: PDF document file to upload
     """
@@ -480,9 +604,9 @@ def summarize_legal_document(legal_text: str) -> Dict[str, Any]:
 
 
 @app.post("/summarize")
-async def summarize_text_endpoint(request: Dict[str, str]):
+async def summarize_text_endpoint(request: Dict[str, str], current_user: User = Depends(require_auth)):
     """
-    Summarize legal text in layman-friendly terms
+    Summarize legal text in layman-friendly terms (requires authentication)
     
     - **text**: The legal text to summarize
     """
@@ -519,9 +643,9 @@ async def summarize_text_endpoint(request: Dict[str, str]):
 
 
 @app.post("/summarize-upload")
-async def summarize_document_endpoint(file: UploadFile = File(...)):
+async def summarize_document_endpoint(file: UploadFile = File(...), current_user: User = Depends(require_auth)):
     """
-    Summarize a legal document from file upload in layman-friendly terms
+    Summarize a legal document from file upload in layman-friendly terms (requires authentication)
     
     - **file**: Legal document file (txt, pdf, doc, etc.)
     """
@@ -601,9 +725,9 @@ async def summarize_document_endpoint(file: UploadFile = File(...)):
 
 
 @app.post("/explain-selection")
-async def explain_selection(request: ExplainSelectionRequest):
+async def explain_selection(request: ExplainSelectionRequest, current_user: User = Depends(require_auth)):
     """
-    Analyze selected text from a document and provide AI explanation
+    Analyze selected text from a document and provide AI explanation (requires authentication)
     
     - **selected_text**: The text that was highlighted/selected
     - **document_url**: The URL of the document (for context)
@@ -670,9 +794,9 @@ def generate_mock_explanation(text: str) -> str:
 
 
 @app.post("/extract-pdf-text")
-async def extract_pdf_text(request: ExtractRequest):
+async def extract_pdf_text(request: ExtractRequest, current_user: User = Depends(require_auth)):
     """
-    Server-side extraction of text from a PDF URL to avoid CORS and provide chat context.
+    Server-side extraction of text from a PDF URL to avoid CORS and provide chat context (requires authentication).
 
     - **url**: Publicly accessible URL to a PDF
     """
@@ -734,9 +858,9 @@ async def extract_pdf_text(request: ExtractRequest):
 
 
 @app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, current_user: User = Depends(require_auth)):
     """
-    Chat with AI about the document
+    Chat with AI about the document (requires authentication)
     
     - **message**: User's question about the document
     - **document_text**: Optional full document text for context
@@ -820,6 +944,9 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     
     logger.info(f"Starting Legal Document Demystifier API on port {port}...")
+    
+    # Initialize demo users for testing
+    initialize_demo_users()
     
     # Try to initialize Vertex AI but don't block startup
     try:

@@ -9,8 +9,10 @@ import AnalysisPanel from "./components/AnalysisPanel";
 import ChatInterface from "./components/ChatInterface";
 import WorkspaceSidebar from "./components/WorkspaceSidebar";
 import SynapsePanel from "./components/SynapsePanel";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { useAuth } from "./contexts/AuthContext";
 
-export default function Dashboard() {
+function DashboardContent() {
   const [explainedText, setExplainedText] = useState<string>("");
   const [showUploadDemo, setShowUploadDemo] = useState(true); // Default to true to show the new interface
   const [selectedDocument, setSelectedDocument] = useState({
@@ -35,7 +37,7 @@ export default function Dashboard() {
 
   if (showUploadDemo) {
     return (
-  <div className="h-screen bg-white flex flex-col overflow-hidden">
+      <div className="h-screen bg-white flex flex-col overflow-hidden">
         {/* Header */}
         <Header />
 
@@ -76,7 +78,7 @@ export default function Dashboard() {
       {/* Hero Section */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-primary-blue to-accent rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <FileText className="w-10 h-10 text-white" />
           </div>
           
@@ -92,7 +94,7 @@ export default function Dashboard() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
             <Link 
               href="/upload"
-              className="bg-accent text-white px-8 py-3 rounded-lg font-medium hover:bg-accent/90 transition-colors flex items-center space-x-2 shadow-lg hover:shadow-xl"
+              className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center space-x-2 shadow-lg hover:shadow-xl"
             >
               <Upload className="w-5 h-5" />
               <span>Upload Document</span>
@@ -142,5 +144,13 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
   );
 }
