@@ -240,44 +240,29 @@ def analyze_legal_document(legal_text: str) -> Dict[str, Any]:
         }
 
 
-def search_related_documents(query: str) -> Dict[str, Any]:
-    """Search for related document snippets using Vertex AI Search"""
+def search_related_documents(query: str, *, current_user: Optional[User] = None, document_context: str = "") -> Dict[str, Any]:
+    """Search for related document snippets using Vertex AI Search.
+
+    Returns empty results if Discovery Engine is unavailable or an error occurs (no mock data by default).
+    Configure engine via env: RAG_ENGINE_PROJECT, RAG_ENGINE_LOCATION, RAG_ENGINE_ID.
+    Optionally filter by user metadata if your index has a `user_id` field and you set RAG_FILTER_METADATA=user_id.
+    """
+    allow_mock = os.getenv("RAG_ALLOW_MOCK", "false").lower() == "true"
     if not DISCOVERY_ENGINE_AVAILABLE:
-        # Return mock data for testing when Discovery Engine is not available
-        mock_snippets = [
-            {
-                "text": "The tenant shall maintain the premises in good condition and repair, reasonable wear and tear excepted.",
-                "source": "Service Agreement",
-                "relevance_score": 0.95,
-                "document_url": ""
-            },
-            {
-                "text": "Security deposits shall be held in a separate interest-bearing account and returned within 30 days of lease termination.",
-                "source": "Security_Deposit_Policy", 
-                "relevance_score": 0.87,
-                "document_url": ""
-            },
-            {
-                "text": "All maintenance requests must be submitted in writing and will be addressed within 48 hours of receipt.",
-                "source": "Privacy Policy",
-                "relevance_score": 0.72,
-                "document_url": ""
-            }
-        ]
-        
+        logger.warning("Discovery Engine unavailable; returning empty related_snippets")
         return {
             "success": True,
-            "related_snippets": mock_snippets,
-            "total_results": len(mock_snippets),
+            "related_snippets": [],
+            "total_results": 0,
             "search_query": query,
-            "note": "Using mock data - Vertex AI Search unavailable"
+            "note": "Vertex AI Search unavailable" if allow_mock else ""
         }
 
     try:
-        # Project configuration for Vertex AI Search
-        project_id = "demystifier-ai"
-        location = "global"  # Vertex AI Search typically uses global location
-        engine_id = "synapseragengine_1758347548138"  # Your unique engine ID
+        # Project configuration for Vertex AI Search (env overridable)
+        project_id = os.getenv("RAG_ENGINE_PROJECT", "demystifier-ai")
+        location = os.getenv("RAG_ENGINE_LOCATION", "global")
+        engine_id = os.getenv("RAG_ENGINE_ID", "synapseragengine_1758347548138")
         
         # Create the search client
         client = discoveryengine.SearchServiceClient()
@@ -286,11 +271,21 @@ def search_related_documents(query: str) -> Dict[str, Any]:
         serving_config = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}/servingConfigs/default_config"
         
         # Create the search request
+        # Optional metadata filter by user_id if configured and available in your engine
+        metadata_filter = None
+        filter_field = os.getenv("RAG_FILTER_METADATA", "")
+        if filter_field and current_user:
+            # Example: user_id:"<uuid>"
+            safe_val = getattr(current_user, "id", None) or getattr(current_user, "email", None)
+            if safe_val:
+                metadata_filter = f'{filter_field}:"{safe_val}"'
+
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
             query=query,
             page_size=10,  # Number of results to return
             safe_search=False,
+            filter=metadata_filter or None,
             content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
                 snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
                     return_snippet=True,
@@ -352,35 +347,12 @@ def search_related_documents(query: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error searching related documents: {str(e)}")
-        
-        # Return mock data for testing
-        mock_snippets = [
-            {
-                "text": "The tenant shall maintain the premises in good condition and repair, reasonable wear and tear excepted.",
-                "source": "Service Agreement",
-                "relevance_score": 0.95,
-                "document_url": ""
-            },
-            {
-                "text": "Security deposits shall be held in a separate interest-bearing account and returned within 30 days of lease termination.",
-                "source": "Security_Deposit_Policy", 
-                "relevance_score": 0.87,
-                "document_url": ""
-            },
-            {
-                "text": "All maintenance requests must be submitted in writing and will be addressed within 48 hours of receipt.",
-                "source": "Privacy Policy",
-                "relevance_score": 0.72,
-                "document_url": ""
-            }
-        ]
-        
         return {
             "success": True,
-            "related_snippets": mock_snippets,
-            "total_results": len(mock_snippets),
+            "related_snippets": [],
+            "total_results": 0,
             "search_query": query,
-            "note": "Using mock data - Vertex AI Search unavailable"
+            "note": "Search failed"
         }
 
 
@@ -1060,9 +1032,9 @@ async def rag_search_endpoint(request: RAGSearchRequest, current_user: User = De
         if len(query) > 1000:  # Limit query size
             query = query[:1000]
             logger.warning("Query truncated to 1,000 characters")
-        
-        # Search for related documents
-        search_result = search_related_documents(query)
+
+        # Search for related documents (pass user and context for optional filtering)
+        search_result = search_related_documents(query, current_user=current_user, document_context=request.document_context or "")
         
         if search_result["success"]:
             return JSONResponse(

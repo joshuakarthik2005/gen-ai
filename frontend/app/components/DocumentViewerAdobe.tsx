@@ -9,7 +9,7 @@ import { withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 const ADOBE_API_KEY =
   (process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string) ||
-  "e3b008974ccc4ac5aacabe3252c01c67";
+  "40e252bce0f64d1eaa8e5d21ea8a42e2";
 
 interface DocumentViewerProps {
   documentUrl: string;
@@ -232,11 +232,10 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
 
     try {
       console.log('Sending request to chat API...');
+      const authHeaders = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.CHAT), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders,
         body: JSON.stringify({
           message: message.trim(),
           document_text: documentText,

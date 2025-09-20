@@ -45,6 +45,16 @@ interface Analysis {
   type: "explanation" | "insight" | "warning";
 }
 
+type RiskSeverity = 'high' | 'medium' | 'low';
+
+interface RiskFinding {
+  id: string;
+  type: string;
+  severity: RiskSeverity;
+  snippet: string;
+  keyword: string;
+}
+
 interface ChatMessage {
   id: string;
   text: string;
@@ -83,7 +93,7 @@ const toAbsoluteBackendUrl = (input: string): string => {
 };
 
 const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: SynapsePanelProps) => {
-  const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat">("snippets");
+  const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat" | "risks">("snippets");
   const [chatMessage, setChatMessage] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
@@ -97,6 +107,9 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     summary: string;
     key_points: string[];
   } | null>(null);
+  // Risk detection states
+  const [riskFindings, setRiskFindings] = useState<RiskFinding[]>([]);
+  const [isScanningRisks, setIsScanningRisks] = useState(false);
   
   // RAG search states
   const [relatedSnippets, setRelatedSnippets] = useState<RelatedSnippet[]>([]);
@@ -122,6 +135,72 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     } catch {
       return { title: filename || 'Summary', summary: '', key_points: [] };
     }
+  };
+
+  // Heuristic risk detector: scans text for common risky clauses
+  const detectRisks = (text: string): RiskFinding[] => {
+    if (!text) return [];
+    const patterns: Array<{ type: string; severity: RiskSeverity; regex: RegExp[] }> = [
+      {
+        type: 'Auto-renewal', severity: 'medium',
+        regex: [/auto[-\s]?renew/i, /automatic\s+renewal/i, /renews?\s+automatically/i]
+      },
+      {
+        type: 'High penalties / liquidated damages', severity: 'high',
+        regex: [/liquidated\s+damages?/i, /penalt(y|ies)/i, /late\s+fee/i, /(fee|penalty)\s+of\s+\$?\d{3,}/i, /\b(1\d{2}|[2-9]\d{2})%/]
+      },
+      {
+        type: 'Waiver of rights', severity: 'high',
+        regex: [/waive[sd]?\b/i, /waiver\b/i, /no\s+waiver\b/i]
+      },
+      {
+        type: 'Indemnification', severity: 'high',
+        regex: [/indemnif(y|ies|ication|y\s+and\s+hold\s+harmless)/i]
+      },
+      {
+        type: 'Unilateral termination', severity: 'medium',
+        regex: [/sole\s+discretion\b/i, /may\s+terminate\s+at\s+any\s+time/i]
+      },
+      {
+        type: 'Arbitration/venue limitations', severity: 'medium',
+        regex: [/binding\s+arbitration/i, /venue\s+shall\s+be/i, /exclusive\s+jurisdiction/i]
+      },
+      {
+        type: 'Confidentiality overreach', severity: 'low',
+        regex: [/confidential(ity)?\b/i, /trade\s+secret/i, /proprietary\s+information/i]
+      }
+    ];
+
+    const findings: RiskFinding[] = [];
+    const lower = text; // keep original casing for snippets
+
+    const addFinding = (type: string, severity: RiskSeverity, keyword: string, index: number) => {
+      const start = Math.max(0, index - 80);
+      const end = Math.min(lower.length, index + keyword.length + 120);
+      const snippet = lower.slice(start, end).replace(/\s+/g, ' ').trim();
+      findings.push({ id: `${type}-${index}-${Math.random().toString(36).slice(2,7)}`, type, severity, keyword, snippet });
+    };
+
+    for (const p of patterns) {
+      for (const r of p.regex) {
+        let m: RegExpExecArray | null;
+        const re = new RegExp(r.source, r.flags.includes('g') ? r.flags : r.flags + 'g');
+        while ((m = re.exec(lower)) !== null) {
+          addFinding(p.type, p.severity, m[0], m.index);
+          // avoid infinite loops on zero-width matches
+          if (m.index === re.lastIndex) re.lastIndex++;
+        }
+      }
+    }
+
+    // De-duplicate by overlapping ranges/type
+    const unique: RiskFinding[] = [];
+    const seen = new Set<string>();
+    for (const f of findings) {
+      const key = `${f.type}:${f.keyword}:${f.snippet.slice(0,60)}`;
+      if (!seen.has(key)) { seen.add(key); unique.push(f); }
+    }
+    return unique.slice(0, 50); // cap to reasonable number
   };
 
   const summarizeDocument = async () => {
@@ -269,7 +348,16 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
 
       const data = await response.json();
       console.log('Document text extracted:', data.text?.length || 0, 'characters');
-      setDocumentText(data.text || '');
+      const fullText = data.text || '';
+      setDocumentText(fullText);
+      // Kick off risk scanning
+      try {
+        setIsScanningRisks(true);
+        const risks = detectRisks(fullText);
+        setRiskFindings(risks);
+      } finally {
+        setIsScanningRisks(false);
+      }
     } catch (error) {
       console.error('Error extracting document text:', error);
       // Set minimal context if extraction fails
@@ -375,6 +463,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     
     setIsSearchingRAG(true);
     setRagSearchError(null);
+    // Clear previous results to avoid showing stale snippets
+    setRelatedSnippets([]);
     setLastSearchQuery(query);
     
     try {
@@ -393,10 +483,10 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
         throw new Error(`RAG search failed: ${response.status}`);
       }
 
-      const data: RAGSearchResult = await response.json();
+  const data: RAGSearchResult = await response.json();
       console.log('RAG search results:', data);
-      
-      setRelatedSnippets(data.related_snippets || []);
+  // If backend returns nothing, keep it empty to show proper empty state
+  setRelatedSnippets(Array.isArray(data.related_snippets) ? data.related_snippets : []);
       
       // Switch to snippets tab to show results
       setActiveTab('snippets');
@@ -404,6 +494,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     } catch (error) {
       console.error('RAG search error:', error);
       setRagSearchError((error as Error).message || 'Failed to search related documents');
+      // Ensure no stale snippets are displayed upon error
+      setRelatedSnippets([]);
     } finally {
       setIsSearchingRAG(false);
     }
@@ -506,6 +598,22 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             <BookOpen className="w-4 h-4" />
             <span>Snippets</span>
           </button>
+          <button
+            onClick={() => setActiveTab("risks")}
+            className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              activeTab === "risks" 
+                ? "bg-white text-gray-900 shadow-sm" 
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <AlertCircle className="w-4 h-4" />
+            <span>Risks</span>
+            {riskFindings.length > 0 && (
+              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 px-1 flex items-center justify-center">
+                {riskFindings.length}
+              </span>
+            )}
+          </button>
           
           <button
             onClick={() => setActiveTab("analysis")}
@@ -539,6 +647,45 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {/* Risks Tab */}
+        {activeTab === "risks" && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-900">Risk Flags</h3>
+              {isScanningRisks && (
+                <span className="text-xs text-gray-500">Scanning…</span>
+              )}
+            </div>
+
+            {riskFindings.length === 0 && !isScanningRisks && (
+              <div className="text-center py-8 text-gray-500">
+                <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No obvious risk clauses detected</p>
+                <p className="text-xs text-gray-400 mt-1">This is a heuristic scan; always review with legal counsel.</p>
+              </div>
+            )}
+
+            {riskFindings.map((r) => {
+              const color = r.severity === 'high' ? 'bg-red-500' : r.severity === 'medium' ? 'bg-yellow-500' : 'bg-green-500';
+              const badge = r.severity === 'high' ? 'text-red-700 bg-red-100' : r.severity === 'medium' ? 'text-yellow-700 bg-yellow-100' : 'text-green-700 bg-green-100';
+              return (
+                <div key={r.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2.5 h-2.5 rounded-full ${color}`}></div>
+                      <span className="text-xs font-medium text-gray-700">{r.type}</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${badge} uppercase tracking-wide`}>{r.severity}</span>
+                  </div>
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    {r.snippet}
+                  </p>
+                  <div className="mt-2 text-xs text-gray-500">Keyword: <span className="font-mono">{r.keyword}</span></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {/* Related Snippets Tab */}
         {activeTab === "snippets" && (
           <div className="p-4 space-y-4">

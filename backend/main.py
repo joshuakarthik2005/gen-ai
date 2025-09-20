@@ -172,19 +172,23 @@ def analyze_legal_document(legal_text: str) -> Dict[str, Any]:
 
 
 def search_related_documents(query: str) -> Dict[str, Any]:
-    """Search for related document snippets using Vertex AI Search"""
+    """Search for related document snippets using Vertex AI Search.
+
+    Uses env vars for engine config and returns empty results on error (no mock snippets).
+    Env: RAG_ENGINE_PROJECT, RAG_ENGINE_LOCATION, RAG_ENGINE_ID
+    """
     try:
-        # Project configuration for Vertex AI Search
-        project_id = "demystifier-ai"
-        location = "global"  # Vertex AI Search typically uses global location
-        engine_id = "synapseragengine_1758347548138"  # Your unique engine ID
-        
+        # Project configuration for Vertex AI Search (env-overridable)
+        project_id = os.getenv("RAG_ENGINE_PROJECT", "demystifier-ai")
+        location = os.getenv("RAG_ENGINE_LOCATION", "global")
+        engine_id = os.getenv("RAG_ENGINE_ID", "synapseragengine_1758347548138")
+
         # Create the search client
         client = discoveryengine.SearchServiceClient()
-        
+
         # The resource name of the search engine
         serving_config = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}/servingConfigs/default_config"
-        
+
         # Create the search request
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
@@ -202,85 +206,60 @@ def search_related_documents(query: str) -> Dict[str, Any]:
                 )
             )
         )
-        
+
         # Perform the search
         response = client.search(request=request)
-        
+
         # Process the results
-        related_snippets = []
+        related_snippets: List[Dict[str, Any]] = []
         for result in response.results:
             # Extract document info
             document_name = "Unknown Document"
             if hasattr(result.document, 'struct_data') and result.document.struct_data:
-                # Try to get document name from metadata
                 struct_data = result.document.struct_data
                 if 'title' in struct_data:
                     document_name = struct_data['title']
                 elif 'name' in struct_data:
                     document_name = struct_data['name']
-            
+
             # Extract snippets
-            snippets = []
+            snippets: List[str] = []
             if hasattr(result.document, 'derived_struct_data') and result.document.derived_struct_data:
                 derived_data = result.document.derived_struct_data
                 if 'snippets' in derived_data:
                     for snippet in derived_data['snippets']:
                         if 'snippet' in snippet:
                             snippets.append(snippet['snippet'])
-            
+
             # If no snippets from derived data, try to get content
             if not snippets and hasattr(result.document, 'struct_data') and result.document.struct_data:
                 content = result.document.struct_data.get('content', '')
                 if content:
-                    # Take first 200 characters as snippet
                     snippets.append(content[:200] + "..." if len(content) > 200 else content)
-            
+
             for snippet in snippets:
                 related_snippets.append({
                     "text": snippet,
                     "source": document_name,
-                    "relevance_score": 0.8,  # You might want to extract actual scores
+                    "relevance_score": 0.8,
                     "document_url": result.document.id if hasattr(result.document, 'id') else ""
                 })
-        
+
         return {
             "success": True,
             "related_snippets": related_snippets,
             "total_results": len(related_snippets),
             "search_query": query
         }
-        
+
     except Exception as e:
         logger.error(f"Error searching related documents: {str(e)}")
-        
-        # Return mock data for testing
-        mock_snippets = [
-            {
-                "text": "The tenant shall maintain the premises in good condition and repair, reasonable wear and tear excepted.",
-                "source": "Service Agreement",
-                "relevance_score": 0.95,
-                "document_url": ""
-            },
-            {
-                "text": "Security deposits shall be held in a separate interest-bearing account and returned within 30 days of lease termination.",
-                "source": "Security_Deposit_Policy", 
-                "relevance_score": 0.87,
-                "document_url": ""
-            },
-            {
-                "text": "All maintenance requests must be submitted in writing and will be addressed within 48 hours of receipt.",
-                "source": "Privacy Policy",
-                "relevance_score": 0.72,
-                "document_url": ""
-            }
-        ]
-        
         return {
             "success": True,
-            "related_snippets": mock_snippets,
-            "total_results": len(mock_snippets),
+            "related_snippets": [],
+            "total_results": 0,
             "search_query": query,
-            "note": "Using mock data - Vertex AI Search unavailable"
+            "note": "Vertex AI Search unavailable or failed"
         }
 
 
