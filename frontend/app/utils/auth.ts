@@ -9,6 +9,7 @@ type TokenResponse = {
 };
 
 const STORAGE_KEY = "auth_token_v1";
+const USER_TOKEN_KEY = "token"; // AuthContext stores JWT here
 
 type StoredToken = {
   token: string;
@@ -55,6 +56,12 @@ async function loginAndGetToken(): Promise<string> {
 }
 
 export async function getAuthToken(): Promise<string> {
+  // Prefer real user token if available
+  try {
+    const userToken = localStorage.getItem(USER_TOKEN_KEY);
+    if (userToken) return userToken;
+  } catch { /* ignore */ }
+
   const stored = getStored();
   if (stored && stored.expiresAt > Date.now()) return stored.token;
   return loginAndGetToken();

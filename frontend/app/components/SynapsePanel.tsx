@@ -129,16 +129,17 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     setSummarizeError(null);
     try {
       // Try simple local proxy first (same-origin)
+      const authHeaders = await withAuthHeaders({ 'Content-Type': 'application/json' });
       let resp = await fetch('/api/summarize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ pdf_url: documentUrl, filename }),
       });
       // If proxy doesn't exist (404), fallback to direct backend URL
       if (resp.status === 404) {
         resp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.SUMMARIZE), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({ pdf_url: documentUrl, filename }),
         });
       }
@@ -166,13 +167,16 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   const file = new File([blob], filename || 'document.pdf', { type: blob.type || 'application/pdf' });
   const formData = new FormData();
   formData.append('file', file);
+        const uploadHeaders = await withAuthHeaders();
         let resp2 = await fetch('/api/summarize-upload', {
           method: 'POST',
+          headers: uploadHeaders as any,
           body: formData,
         });
         if (resp2.status === 404) {
           resp2 = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.SUMMARIZE_UPLOAD), {
             method: 'POST',
+            headers: uploadHeaders as any,
             body: formData,
           });
         }

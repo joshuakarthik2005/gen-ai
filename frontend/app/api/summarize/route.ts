@@ -6,9 +6,16 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    // Forward auth headers if present
+    const auth = req.headers.get("authorization") || "";
+    const cookie = req.headers.get("cookie") || "";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (auth) headers["Authorization"] = auth;
+    if (cookie) headers["Cookie"] = cookie;
+
     const upstream = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.SUMMARIZE), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
       cache: "no-store",
     });
