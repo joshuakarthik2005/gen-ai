@@ -742,9 +742,10 @@ async def upload_pdf(file: UploadFile = File(...), current_user: Optional[User] 
                         raise ValueError("Service account credentials not available for signing")
                 except Exception as e:
                     logger.warning(f"Failed to generate signed URL: {e}")
-                    # Fallback to proxy URL
-                    file_url = f"/api/proxy-gcs/{bucket_name}/{unique_filename}"
-                    logger.info(f"Using proxy URL for authenticated user: {file_url}")
+                    # Fallback to proxy URL - make it a full URL to the backend
+                    backend_url = os.getenv("BACKEND_URL", "https://legal-backend-144935064473.asia-south1.run.app")
+                    file_url = f"{backend_url}/proxy-gcs/{bucket_name}/{unique_filename}"
+                    logger.info(f"Using full backend proxy URL for authenticated user: {file_url}")
             
             logger.info(f"Successfully uploaded {file.filename} to GCS as {unique_filename}")
             

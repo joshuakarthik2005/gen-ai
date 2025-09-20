@@ -151,7 +151,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ pdf_url: documentUrl }),
+        body: JSON.stringify({ url: documentUrl }),
       });
 
       if (!response.ok) {
