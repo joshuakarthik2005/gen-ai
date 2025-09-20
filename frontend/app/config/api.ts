@@ -15,6 +15,7 @@ export const API_CONFIG = {
     SUMMARIZE_UPLOAD: "/summarize-upload",
     CHAT: "/chat",
     EXTRACT_PDF_TEXT: "/extract-pdf-text",
+    RAG_SEARCH: "/rag-search",
     ROOT: "/"
   },
   

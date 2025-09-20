@@ -8,12 +8,13 @@ import { withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 const ADOBE_API_KEY =
   (process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string) ||
-  "e3b008974ccc4ac5aacabe3252c01c67";
+  "42dca80537eb431cad94af71101d769d";
 
 interface DocumentViewerProps {
   documentUrl: string;
   filename: string;
   onExplainText: (text: string) => void;
+  onRagSearch?: (query: string) => void;
 }
 
 interface ExplainTooltipProps {
@@ -104,7 +105,7 @@ function ExplainTooltip({ x, y, selectedText, onExplain, onClose }: ExplainToolt
   );
 }
 
-const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewerProps) => {
+const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: DocumentViewerProps) => {
   const viewerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -138,6 +139,10 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText }: DocumentViewer
 
   const handleExplainText = (text: string) => {
     onExplainText(text);
+    // Also trigger RAG search for related snippets
+    if (onRagSearch) {
+      onRagSearch(text);
+    }
     closeTooltip();
   };
 

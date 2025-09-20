@@ -31,19 +31,7 @@ interface WorkspaceSidebarProps {
 // localStorage helper functions
 const DOCUMENTS_STORAGE_KEY = "workspace_documents";
 
-const getStoredDocuments = (): Document[] => {
-  try {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(DOCUMENTS_STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    }
-  } catch (error) {
-    console.error('Error loading documents from localStorage:', error);
-  }
-  
-  // Return default documents if no stored documents found
+const getDefaultDocuments = (): Document[] => {
   return [
     { 
       id: "1", 
@@ -85,6 +73,22 @@ const getStoredDocuments = (): Document[] => {
   ];
 };
 
+const getStoredDocuments = (): Document[] => {
+  try {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(DOCUMENTS_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    }
+  } catch (error) {
+    console.error('Error loading documents from localStorage:', error);
+  }
+  
+  // Return default documents if no stored documents found
+  return getDefaultDocuments();
+};
+
 const saveDocumentsToStorage = (documents: Document[]) => {
   try {
     if (typeof window !== 'undefined') {
@@ -98,15 +102,24 @@ const saveDocumentsToStorage = (documents: Document[]) => {
 const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["recent"]));
-  const [documents, setDocuments] = useState<Document[]>(getStoredDocuments);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Save documents to localStorage whenever documents change
+  // Initialize documents from localStorage after hydration
   useEffect(() => {
-    saveDocumentsToStorage(documents);
-  }, [documents]);
+    setDocuments(getStoredDocuments());
+    setIsHydrated(true);
+  }, []);
+
+  // Save documents to localStorage whenever documents change (but only after hydration)
+  useEffect(() => {
+    if (isHydrated) {
+      saveDocumentsToStorage(documents);
+    }
+  }, [documents, isHydrated]);
 
   // Clean up blob URLs when the window is about to unload
   useEffect(() => {
@@ -204,10 +217,15 @@ const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
     setExpandedFolders(newExpanded);
   };
 
-  const filteredDocuments = documents.filter(doc =>
-    doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    doc.type.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredDocuments = isHydrated 
+    ? documents.filter(doc =>
+        doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.type.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : getDefaultDocuments().filter(doc =>
+        doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.type.toLowerCase().includes(searchQuery.toLowerCase())
+      );
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
@@ -291,13 +309,17 @@ const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
             <button className="w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-100 rounded-md transition-colors">
               <Star className="w-4 h-4 text-yellow-500" />
               <span className="text-sm text-gray-700">Starred</span>
-              <span className="ml-auto text-xs text-gray-400">3</span>
+              <span className="ml-auto text-xs text-gray-400">
+                {isHydrated ? documents.filter(doc => doc.starred).length : getDefaultDocuments().filter(doc => doc.starred).length}
+              </span>
             </button>
             
             <button className="w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-100 rounded-md transition-colors">
               <Clock className="w-4 h-4 text-gray-500" />
               <span className="text-sm text-gray-700">Recent</span>
-              <span className="ml-auto text-xs text-gray-400">5</span>
+              <span className="ml-auto text-xs text-gray-400">
+                {isHydrated ? documents.length : getDefaultDocuments().length}
+              </span>
             </button>
           </div>
         </div>

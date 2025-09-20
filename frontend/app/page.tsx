@@ -25,11 +25,18 @@ export default function Dashboard() {
     url: "https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf",
     name: "Sample Employment Agreement"
   });
+  const [ragSearchQuery, setRagSearchQuery] = useState<string>("");
 
   const handleExplainText = (text: string) => {
     setExplainedText(text);
     // Reset after a brief moment to allow the chat component to process it
     setTimeout(() => setExplainedText(""), 100);
+  };
+
+  const handleRagSearch = (query: string) => {
+    setRagSearchQuery(query);
+    // Reset after a brief moment to allow the SynapsePanel to process it
+    setTimeout(() => setRagSearchQuery(""), 100);
   };
   // (Removed misplaced import statement)
 
@@ -60,7 +67,8 @@ export default function Dashboard() {
             <DocumentViewer 
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
-              onExplainText={handleExplainText} 
+              onExplainText={handleExplainText}
+              onRagSearch={handleRagSearch}
             />
           </div>
 
@@ -70,6 +78,7 @@ export default function Dashboard() {
               explainedText={explainedText}
               documentUrl={selectedDocument.url}
               filename={selectedDocument.name}
+              ragSearchQuery={ragSearchQuery}
             />
           </div>
         </div>

@@ -20,14 +20,21 @@ interface SynapsePanelProps {
   explainedText: string;
   documentUrl: string;
   filename: string;
+  ragSearchQuery?: string;
 }
 
 interface RelatedSnippet {
-  id: string;
   text: string;
   source: string;
-  relevance: number;
-  type: "contract" | "policy" | "precedent";
+  relevance_score: number;
+  document_url?: string;
+}
+
+interface RAGSearchResult {
+  related_snippets: RelatedSnippet[];
+  search_query: string;
+  total_results: number;
+  note?: string;
 }
 
 interface Analysis {
@@ -48,7 +55,7 @@ interface ChatMessage {
 import { API_CONFIG, getApiUrl } from "../config/api";
 import { withAuthHeaders } from "../utils/auth";
 
-const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProps) => {
+const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: SynapsePanelProps) => {
   const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat">("snippets");
   const [chatMessage, setChatMessage] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -63,6 +70,12 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
     summary: string;
     key_points: string[];
   } | null>(null);
+  
+  // RAG search states
+  const [relatedSnippets, setRelatedSnippets] = useState<RelatedSnippet[]>([]);
+  const [isSearchingRAG, setIsSearchingRAG] = useState(false);
+  const [ragSearchError, setRagSearchError] = useState<string | null>(null);
+  const [lastSearchQuery, setLastSearchQuery] = useState<string>("");
 
   const normalizeSummaryResponse = (data: any) => {
     try {
@@ -302,30 +315,53 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
     return { title, summary: summary || clean.slice(0, 400), key_points: bullets };
   };
 
-  // Sample related snippets data
-  const relatedSnippets: RelatedSnippet[] = [
-    {
-      id: "1",
-      text: "The employee agrees to work exclusively for the company during the term of employment...",
-      source: "Standard Employment Contract",
-      relevance: 95,
-      type: "contract"
-    },
-    {
-      id: "2", 
-      text: "Confidentiality obligations shall survive termination of this agreement...",
-      source: "NDA Template",
-      relevance: 87,
-      type: "policy"
-    },
-    {
-      id: "3",
-      text: "Either party may terminate this agreement with 30 days written notice...",
-      source: "Service Agreement",
-      relevance: 78,
-      type: "contract"
+  // RAG search function
+  const performRAGSearch = async (query: string) => {
+    if (!query.trim()) return;
+    
+    setIsSearchingRAG(true);
+    setRagSearchError(null);
+    setLastSearchQuery(query);
+    
+    try {
+      console.log('Performing RAG search for:', query);
+      const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.RAG_SEARCH), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: query.trim(),
+          document_context: documentUrl
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`RAG search failed: ${response.status}`);
+      }
+
+      const data: RAGSearchResult = await response.json();
+      console.log('RAG search results:', data);
+      
+      setRelatedSnippets(data.related_snippets || []);
+      
+      // Switch to snippets tab to show results
+      setActiveTab('snippets');
+      
+    } catch (error) {
+      console.error('RAG search error:', error);
+      setRagSearchError((error as Error).message || 'Failed to search related documents');
+    } finally {
+      setIsSearchingRAG(false);
     }
-  ];
+  };
+
+  // Handle RAG search query from document viewer
+  useEffect(() => {
+    if (ragSearchQuery && ragSearchQuery.trim() !== "" && ragSearchQuery !== lastSearchQuery) {
+      performRAGSearch(ragSearchQuery);
+    }
+  }, [ragSearchQuery]);
 
   // Handle explained text from document viewer
   useEffect(() => {
@@ -458,15 +494,38 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
               <span className="text-xs text-gray-500">{relatedSnippets.length} found</span>
             </div>
             
-            {relatedSnippets.map((snippet) => (
-              <div key={snippet.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow">
+            {isSearchingRAG && (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-3 text-sm text-gray-600">Searching related documents...</span>
+              </div>
+            )}
+            
+            {ragSearchError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div className="flex items-center">
+                  <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                  <span className="text-sm text-red-700">{ragSearchError}</span>
+                </div>
+              </div>
+            )}
+            
+            {relatedSnippets.length === 0 && !isSearchingRAG && !ragSearchError && (
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">Select text from the document to find related snippets</p>
+              </div>
+            )}
+            
+            {relatedSnippets.map((snippet, index) => (
+              <div key={index} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow">
                 <div className="flex items-start justify-between mb-2">
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${getSnippetTypeColor(snippet.type)}`}>
-                    {snippet.type}
+                  <span className="text-xs px-2 py-1 rounded-full font-medium bg-blue-100 text-blue-800">
+                    Document
                   </span>
                   <div className="flex items-center space-x-1">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-xs text-gray-500">{snippet.relevance}%</span>
+                    <span className="text-xs text-gray-500">{Math.round((snippet.relevance_score || 0) * 100)}%</span>
                   </div>
                 </div>
                 
@@ -476,9 +535,14 @@ const SynapsePanel = ({ explainedText, documentUrl, filename }: SynapsePanelProp
                 
                 <div className="flex items-center justify-between text-xs text-gray-500">
                   <span>From: {snippet.source}</span>
-                  <button className="text-blue-600 hover:text-blue-800 font-medium">
-                    View Source
-                  </button>
+                  {snippet.document_url && (
+                    <button 
+                      onClick={() => window.open(snippet.document_url, '_blank')}
+                      className="text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      View Source
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
