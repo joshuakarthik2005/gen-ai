@@ -69,6 +69,7 @@ except ImportError as e:
 # Google Cloud Storage imports (will be imported when available)
 try:
     from google.cloud import storage
+    from google.oauth2 import service_account
     GCS_AVAILABLE = True
     logger.info("Google Cloud Storage is available")
 except ImportError:
@@ -677,8 +678,22 @@ async def upload_pdf(file: UploadFile = File(...), current_user: Optional[User] 
         bucket_name = "demystifier-ai_cloudbuild"  # Updated to use existing bucket
         
         try:
-            # Initialize GCS client
-            client = storage.Client()
+            # Initialize GCS client with service account credentials
+            service_account_path = "service-account-key.json"
+            
+            if os.path.exists(service_account_path):
+                # Use service account key file with proper scopes for signing
+                credentials = service_account.Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=['https://www.googleapis.com/auth/cloud-platform']
+                )
+                client = storage.Client(credentials=credentials)
+                logger.info("Using service account credentials for GCS with signing scopes")
+            else:
+                # Fallback to default credentials (for Cloud Run environment)
+                client = storage.Client()
+                logger.info("Using default credentials for GCS")
+            
             bucket = client.bucket(bucket_name)
             
             # Generate unique filename with user-specific path
@@ -1151,8 +1166,22 @@ async def get_user_files(current_user: User = Depends(require_auth)):
         bucket_name = "demystifier-ai_cloudbuild"
         
         try:
-            # Initialize GCS client
-            client = storage.Client()
+            # Initialize GCS client with service account credentials
+            service_account_path = "service-account-key.json"
+            
+            if os.path.exists(service_account_path):
+                # Use service account key file with proper scopes for signing
+                credentials = service_account.Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=['https://www.googleapis.com/auth/cloud-platform']
+                )
+                client = storage.Client(credentials=credentials)
+                logger.info("Using service account credentials for GCS with signing scopes")
+            else:
+                # Fallback to default credentials (for Cloud Run environment)
+                client = storage.Client()
+                logger.info("Using default credentials for GCS")
+            
             bucket = client.bucket(bucket_name)
             
             # List blobs in user's folder

@@ -29,9 +29,7 @@ export default function Header() {
   };
 
   const navigationItems = [
-    { href: "/", label: "Dashboard", icon: Home },
-    { href: "/upload", label: "Upload & Analyze", icon: FileText },
-    { href: "/compare", label: "Compare Documents", icon: ArrowLeftRight },
+    { href: "/", label: "ClarityLegal Workspace", icon: Home },
   ];
 
   return (
