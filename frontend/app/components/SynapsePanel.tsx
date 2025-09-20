@@ -128,19 +128,37 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     setIsSummarizing(true);
     setSummarizeError(null);
     try {
-      // Try simple local proxy first (same-origin)
+      // Ensure we have text to summarize
+      let textToSummarize = documentText;
+      if (!textToSummarize) {
+        try {
+          const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
+          const absoluteUrl = toAbsoluteBackendUrl(documentUrl);
+          const r = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ url: absoluteUrl }),
+          });
+          if (r.ok) {
+            const j = await r.json();
+            textToSummarize = j.text || '';
+          }
+        } catch {/* ignore extract failure here; we'll fallback to upload later */}
+      }
+
+      // Try simple local proxy first (same-origin) with text payload
       const authHeaders = await withAuthHeaders({ 'Content-Type': 'application/json' });
       let resp = await fetch('/api/summarize', {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify({ pdf_url: documentUrl, filename }),
+        body: JSON.stringify({ text: textToSummarize || '' }),
       });
       // If proxy doesn't exist (404), fallback to direct backend URL
       if (resp.status === 404) {
         resp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.SUMMARIZE), {
           method: 'POST',
           headers: authHeaders,
-          body: JSON.stringify({ pdf_url: documentUrl, filename }),
+          body: JSON.stringify({ text: textToSummarize || '' }),
         });
       }
       if (!resp.ok) {
@@ -161,7 +179,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
           }
         } catch { /* ignore */ }
-        const docResp = await fetch(fetchUrl);
+  const uploadFetchHeaders = await withAuthHeaders();
+  const docResp = await fetch(fetchUrl, { headers: uploadFetchHeaders as any });
         if (!docResp.ok) throw new Error('Failed to fetch document');
   const blob = await docResp.blob();
   const file = new File([blob], filename || 'document.pdf', { type: blob.type || 'application/pdf' });
@@ -198,7 +217,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             const isCrossOrigin = u.origin !== window.location.origin;
             if (isCrossOrigin) fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
           } catch { /* ignore */ }
-          const docResp2 = await fetch(fetchUrl);
+          const analyzeFetchHeaders = await withAuthHeaders();
+          const docResp2 = await fetch(fetchUrl, { headers: analyzeFetchHeaders as any });
           if (!docResp2.ok) throw new Error('Failed to fetch document for analysis');
           const blob2 = await docResp2.blob();
           // Force content type to application/pdf to help backend detect PDFs
@@ -207,6 +227,7 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
           formData2.append('file', file2);
           const analyzeResp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.ANALYZE_DOCUMENT), {
             method: 'POST',
+            headers: analyzeFetchHeaders as any,
             body: formData2,
           });
           if (!analyzeResp.ok) {
