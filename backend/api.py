@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -680,6 +680,7 @@ async def upload_pdf(file: UploadFile = File(...), current_user: Optional[User] 
         try:
             # Initialize GCS client with service account credentials
             service_account_path = "service-account-key.json"
+            use_signed_urls = False
             
             if os.path.exists(service_account_path):
                 # Use service account key file with proper scopes for signing
@@ -688,11 +689,12 @@ async def upload_pdf(file: UploadFile = File(...), current_user: Optional[User] 
                     scopes=['https://www.googleapis.com/auth/cloud-platform']
                 )
                 client = storage.Client(credentials=credentials)
+                use_signed_urls = True
                 logger.info("Using service account credentials for GCS with signing scopes")
             else:
                 # Fallback to default credentials (for Cloud Run environment)
                 client = storage.Client()
-                logger.info("Using default credentials for GCS")
+                logger.info("Using default credentials for GCS (signed URLs not available)")
             
             bucket = client.bucket(bucket_name)
             
@@ -722,21 +724,38 @@ async def upload_pdf(file: UploadFile = File(...), current_user: Optional[User] 
                 }
                 blob.patch()
             
-            # Generate signed URL (valid for 1 hour)
-            signed_url = blob.generate_signed_url(
-                expiration=datetime.utcnow() + timedelta(hours=1),
-                method='GET'
-            )
+            # Make blob publicly readable for demo purposes (only for temp files)
+            if not current_user:
+                blob.make_public()
+                file_url = blob.public_url
+                logger.info(f"Made temporary file public: {file_url}")
+            else:
+                # For authenticated users, try to generate signed URL, fallback to proxy
+                try:
+                    if use_signed_urls:
+                        file_url = blob.generate_signed_url(
+                            expiration=datetime.utcnow() + timedelta(hours=1),
+                            method='GET'
+                        )
+                        logger.info(f"Generated signed URL for authenticated user")
+                    else:
+                        raise ValueError("Service account credentials not available for signing")
+                except Exception as e:
+                    logger.warning(f"Failed to generate signed URL: {e}")
+                    # Fallback to proxy URL
+                    file_url = f"/api/proxy-gcs/{bucket_name}/{unique_filename}"
+                    logger.info(f"Using proxy URL for authenticated user: {file_url}")
             
             logger.info(f"Successfully uploaded {file.filename} to GCS as {unique_filename}")
             
             return JSONResponse(
                 status_code=200,
                 content={
-                    "signed_url": signed_url,
+                    "signed_url": file_url,
                     "filename": file.filename,
                     "blob_name": unique_filename,
-                    "user_authenticated": current_user is not None
+                    "user_authenticated": current_user is not None,
+                    "public_access": not current_user
                 }
             )
             
@@ -1201,13 +1220,15 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                 
                 # Generate signed URL (valid for 1 hour)
                 try:
+                    # Check if we can generate signed URLs
                     signed_url = blob.generate_signed_url(
                         expiration=datetime.utcnow() + timedelta(hours=1),
                         method='GET'
                     )
                 except Exception as url_error:
                     logger.warning(f"Failed to generate signed URL for {blob.name}: {url_error}")
-                    signed_url = None
+                    # Fallback to proxy URL or public URL
+                    signed_url = f"/api/proxy-gcs/{bucket_name}/{blob.name}"
                 
                 file_info = {
                     "id": blob.name,
@@ -1245,6 +1266,30 @@ async def get_user_files(current_user: User = Depends(require_auth)):
     except Exception as e:
         logger.error(f"Unexpected error in get_user_files: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@app.get("/proxy-gcs/{bucket_name}/{file_path:path}")
+async def proxy_gcs_file(bucket_name: str, file_path: str, current_user: dict = Depends(get_current_active_user)):
+    """Proxy to serve files from Google Cloud Storage when signed URLs don't work"""
+    try:
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(file_path)
+        
+        if not blob.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Download the file content
+        content = blob.download_as_bytes()
+        
+        # Get content type from blob metadata or infer from extension
+        content_type = blob.content_type or "application/octet-stream"
+        
+        return Response(content=content, media_type=content_type)
+        
+    except Exception as e:
+        logger.error(f"Error proxying GCS file {file_path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error accessing file: {str(e)}")
 
 
 if __name__ == "__main__":
