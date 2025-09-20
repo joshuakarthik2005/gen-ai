@@ -8,7 +8,7 @@ import os
 import logging
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,6 +75,15 @@ except ImportError:
     GCS_AVAILABLE = False
     logger.warning("Google Cloud Storage not available. Upload functionality will be limited.")
 
+# Google Cloud Discovery Engine (Vertex AI Search) imports
+try:
+    from google.cloud import discoveryengine
+    DISCOVERY_ENGINE_AVAILABLE = True
+    logger.info("Google Cloud Discovery Engine is available")
+except ImportError:
+    DISCOVERY_ENGINE_AVAILABLE = False
+    logger.warning("Google Cloud Discovery Engine not available. RAG search functionality will be limited.")
+
 # Pydantic models for request/response
 class ExplainSelectionRequest(BaseModel):
     selected_text: str
@@ -86,6 +95,15 @@ class ChatRequest(BaseModel):
 
 class ExtractRequest(BaseModel):
     url: str
+
+class RAGSearchRequest(BaseModel):
+    query: str
+    document_context: str = ""
+
+class RAGSearchResponse(BaseModel):
+    related_snippets: List[Dict[str, Any]]
+    search_query: str
+    total_results: int
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -221,6 +239,150 @@ def analyze_legal_document(legal_text: str) -> Dict[str, Any]:
         }
 
 
+def search_related_documents(query: str) -> Dict[str, Any]:
+    """Search for related document snippets using Vertex AI Search"""
+    if not DISCOVERY_ENGINE_AVAILABLE:
+        # Return mock data for testing when Discovery Engine is not available
+        mock_snippets = [
+            {
+                "text": "The tenant shall maintain the premises in good condition and repair, reasonable wear and tear excepted.",
+                "source": "Service Agreement",
+                "relevance_score": 0.95,
+                "document_url": ""
+            },
+            {
+                "text": "Security deposits shall be held in a separate interest-bearing account and returned within 30 days of lease termination.",
+                "source": "Security_Deposit_Policy", 
+                "relevance_score": 0.87,
+                "document_url": ""
+            },
+            {
+                "text": "All maintenance requests must be submitted in writing and will be addressed within 48 hours of receipt.",
+                "source": "Privacy Policy",
+                "relevance_score": 0.72,
+                "document_url": ""
+            }
+        ]
+        
+        return {
+            "success": True,
+            "related_snippets": mock_snippets,
+            "total_results": len(mock_snippets),
+            "search_query": query,
+            "note": "Using mock data - Vertex AI Search unavailable"
+        }
+
+    try:
+        # Project configuration for Vertex AI Search
+        project_id = "demystifier-ai"
+        location = "global"  # Vertex AI Search typically uses global location
+        engine_id = "synapseragengine_1758347548138"  # Your unique engine ID
+        
+        # Create the search client
+        client = discoveryengine.SearchServiceClient()
+        
+        # The resource name of the search engine
+        serving_config = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}/servingConfigs/default_config"
+        
+        # Create the search request
+        request = discoveryengine.SearchRequest(
+            serving_config=serving_config,
+            query=query,
+            page_size=10,  # Number of results to return
+            safe_search=False,
+            content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+                snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
+                    return_snippet=True,
+                    max_snippet_count=3
+                ),
+                extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
+                    max_extractive_answer_count=1,
+                    max_extractive_segment_count=3
+                )
+            )
+        )
+        
+        # Perform the search
+        response = client.search(request=request)
+        
+        # Process the results
+        related_snippets = []
+        for result in response.results:
+            # Extract document info
+            document_name = "Unknown Document"
+            if hasattr(result.document, 'struct_data') and result.document.struct_data:
+                # Try to get document name from metadata
+                struct_data = result.document.struct_data
+                if 'title' in struct_data:
+                    document_name = struct_data['title']
+                elif 'name' in struct_data:
+                    document_name = struct_data['name']
+            
+            # Extract snippets
+            snippets = []
+            if hasattr(result.document, 'derived_struct_data') and result.document.derived_struct_data:
+                derived_data = result.document.derived_struct_data
+                if 'snippets' in derived_data:
+                    for snippet in derived_data['snippets']:
+                        if 'snippet' in snippet:
+                            snippets.append(snippet['snippet'])
+            
+            # If no snippets from derived data, try to get content
+            if not snippets and hasattr(result.document, 'struct_data') and result.document.struct_data:
+                content = result.document.struct_data.get('content', '')
+                if content:
+                    # Take first 200 characters as snippet
+                    snippets.append(content[:200] + "..." if len(content) > 200 else content)
+            
+            for snippet in snippets:
+                related_snippets.append({
+                    "text": snippet,
+                    "source": document_name,
+                    "relevance_score": 0.8,  # You might want to extract actual scores
+                    "document_url": result.document.id if hasattr(result.document, 'id') else ""
+                })
+        
+        return {
+            "success": True,
+            "related_snippets": related_snippets,
+            "total_results": len(related_snippets),
+            "search_query": query
+        }
+        
+    except Exception as e:
+        logger.error(f"Error searching related documents: {str(e)}")
+        
+        # Return mock data for testing
+        mock_snippets = [
+            {
+                "text": "The tenant shall maintain the premises in good condition and repair, reasonable wear and tear excepted.",
+                "source": "Service Agreement",
+                "relevance_score": 0.95,
+                "document_url": ""
+            },
+            {
+                "text": "Security deposits shall be held in a separate interest-bearing account and returned within 30 days of lease termination.",
+                "source": "Security_Deposit_Policy", 
+                "relevance_score": 0.87,
+                "document_url": ""
+            },
+            {
+                "text": "All maintenance requests must be submitted in writing and will be addressed within 48 hours of receipt.",
+                "source": "Privacy Policy",
+                "relevance_score": 0.72,
+                "document_url": ""
+            }
+        ]
+        
+        return {
+            "success": True,
+            "related_snippets": mock_snippets,
+            "total_results": len(mock_snippets),
+            "search_query": query,
+            "note": "Using mock data - Vertex AI Search unavailable"
+        }
+
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -240,6 +402,7 @@ async def root():
             "/upload-document": "POST - Upload document to cloud storage (requires auth)",
             "/extract-pdf-text": "POST - Extract text from PDF URL (requires auth)",
             "/explain-selection": "POST - Explain selected text (requires auth)",
+            "/rag-search": "POST - Search for related document snippets using Vertex AI Search (requires auth)",
             "/chat": "POST - Chat with AI about document (requires auth)",
             "/api/compare/compare-documents": "POST - Compare two PDF documents semantically (requires auth)",
             "/health": "GET - Check API health status"
@@ -822,6 +985,47 @@ def generate_mock_explanation(text: str) -> str:
     
     else:
         return f"This is a standard legal provision. **Explanation:** The selected text '{text[:100]}...' appears to be a typical contractual clause. Legal documents often use formal language that can be confusing. If you have specific concerns about how this clause might affect you, consider asking for clarification or consulting with a legal professional."
+
+
+@app.post("/rag-search")
+async def rag_search_endpoint(request: RAGSearchRequest, current_user: User = Depends(require_auth)):
+    """
+    Search for related document snippets using Vertex AI Search (requires authentication)
+    
+    - **query**: The search query (selected text)
+    - **document_context**: Optional context about the current document
+    """
+    try:
+        query = request.query.strip()
+        
+        if not query:
+            raise HTTPException(status_code=400, detail="No search query provided")
+        
+        if len(query) > 1000:  # Limit query size
+            query = query[:1000]
+            logger.warning("Query truncated to 1,000 characters")
+        
+        # Search for related documents
+        search_result = search_related_documents(query)
+        
+        if search_result["success"]:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "related_snippets": search_result["related_snippets"],
+                    "search_query": search_result["search_query"],
+                    "total_results": search_result["total_results"],
+                    "note": search_result.get("note", "")
+                }
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to search related documents")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG search error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @app.post("/extract-pdf-text")

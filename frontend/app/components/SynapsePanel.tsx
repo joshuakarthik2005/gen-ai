@@ -325,11 +325,10 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     
     try {
       console.log('Performing RAG search for:', query);
+      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.RAG_SEARCH), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           query: query.trim(),
           document_context: documentUrl
