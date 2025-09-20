@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   Search, 
   Plus, 
@@ -28,10 +28,23 @@ interface WorkspaceSidebarProps {
   onDocumentSelect?: (document: Document) => void;
 }
 
-const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["recent"]));
-  const [documents, setDocuments] = useState<Document[]>([
+// localStorage helper functions
+const DOCUMENTS_STORAGE_KEY = "workspace_documents";
+
+const getStoredDocuments = (): Document[] => {
+  try {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(DOCUMENTS_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    }
+  } catch (error) {
+    console.error('Error loading documents from localStorage:', error);
+  }
+  
+  // Return default documents if no stored documents found
+  return [
     { 
       id: "1", 
       name: "Employment Agreement", 
@@ -69,10 +82,48 @@ const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
       lastModified: "2 weeks ago",
       url: "https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf"
     },
-  ]);
+  ];
+};
+
+const saveDocumentsToStorage = (documents: Document[]) => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
+    }
+  } catch (error) {
+    console.error('Error saving documents to localStorage:', error);
+  }
+};
+
+const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["recent"]));
+  const [documents, setDocuments] = useState<Document[]>(getStoredDocuments);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Save documents to localStorage whenever documents change
+  useEffect(() => {
+    saveDocumentsToStorage(documents);
+  }, [documents]);
+
+  // Clean up blob URLs when the window is about to unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const storedDocs = getStoredDocuments();
+      storedDocs.forEach(doc => {
+        if (doc.url && doc.url.startsWith('blob:')) {
+          URL.revokeObjectURL(doc.url);
+        }
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   const handleFileUpload = (files: FileList | null) => {
     if (!files) return;
