@@ -105,15 +105,17 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
         const result = await response.json();
         await loadUserDocuments(); // Reload the documents list
         
-        // Auto-select the newly uploaded document
+        // Auto-select the newly uploaded document (prefer backend's signed_url)
         const newDoc = {
-          id: result.filename,
+          id: result.blob_name || result.filename,
           name: result.filename,
           type: "PDF Document",
           uploadDate: "Just now",
-          url: result.url
+          url: result.signed_url || result.url
         };
-        onDocumentSelect(newDoc);
+        if (newDoc.url) {
+          onDocumentSelect(newDoc);
+        }
       } else {
         const errorData = await response.json();
         console.error("Upload failed:", errorData);
