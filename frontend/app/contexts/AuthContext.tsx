@@ -40,7 +40,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://legal-backend-144935064473.asia-south1.run.app';
 
   // Check for existing token on mount
   useEffect(() => {
