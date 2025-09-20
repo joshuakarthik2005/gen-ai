@@ -14,7 +14,7 @@ interface DocumentViewerProps {
   documentUrl: string;
   filename: string;
   onExplainText: (text: string) => void;
-  onRagSearch?: (query: string) => void;
+  onRagSearch: (query: string) => void;
 }
 
 interface ExplainTooltipProps {
@@ -140,9 +140,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
   const handleExplainText = (text: string) => {
     onExplainText(text);
     // Also trigger RAG search for related snippets
-    if (onRagSearch) {
-      onRagSearch(text);
-    }
+    onRagSearch(text);
     closeTooltip();
   };
 
