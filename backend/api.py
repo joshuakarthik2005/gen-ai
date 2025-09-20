@@ -305,7 +305,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
         )
         
         # Perform the search
-    response = client.search(request=request)
+        response = client.search(request=request)
         
         # Process the results
         related_snippets = []
