@@ -193,16 +193,22 @@ def search_related_documents(query: str) -> Dict[str, Any]:
         request = discoveryengine.SearchRequest(
             serving_config=serving_config,
             query=query,
-            page_size=10,  # Number of results to return
+            page_size=20,  # Return more results
             safe_search=False,
+            query_expansion_spec=discoveryengine.SearchRequest.QueryExpansionSpec(
+                condition=discoveryengine.SearchRequest.QueryExpansionSpec.Condition.AUTO
+            ),
+            spell_correction_spec=discoveryengine.SearchRequest.SpellCorrectionSpec(
+                mode=discoveryengine.SearchRequest.SpellCorrectionSpec.Mode.AUTO
+            ),
             content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
                 snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
                     return_snippet=True,
-                    max_snippet_count=3
+                    max_snippet_count=5
                 ),
                 extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
-                    max_extractive_answer_count=1,
-                    max_extractive_segment_count=3
+                    max_extractive_answer_count=2,
+                    max_extractive_segment_count=5
                 )
             )
         )
@@ -230,6 +236,16 @@ def search_related_documents(query: str) -> Dict[str, Any]:
                     for snippet in derived_data['snippets']:
                         if 'snippet' in snippet:
                             snippets.append(snippet['snippet'])
+                if 'extractive_answers' in derived_data:
+                    for ans in derived_data['extractive_answers']:
+                        text_val = ans.get('content') or ans.get('answer') or ans.get('text')
+                        if text_val:
+                            snippets.append(text_val)
+                if 'extractive_segments' in derived_data:
+                    for seg in derived_data['extractive_segments']:
+                        text_val = seg.get('content') or seg.get('segment') or seg.get('text')
+                        if text_val:
+                            snippets.append(text_val)
 
             # If no snippets from derived data, try to get content
             if not snippets and hasattr(result.document, 'struct_data') and result.document.struct_data:
@@ -244,6 +260,123 @@ def search_related_documents(query: str) -> Dict[str, Any]:
                     "relevance_score": 0.8,
                     "document_url": result.document.id if hasattr(result.document, 'id') else ""
                 })
+
+        # Fallback: simple typo correction (e.g., lanlord -> landlord)
+        if len(related_snippets) == 0 and query:
+            try:
+                corrections = {
+                    r"\blanlord\b": "landlord",
+                    r"\btennant\b": "tenant",
+                    r"\bleesee\b": "lessee",
+                    r"\bleesor\b": "lessor",
+                }
+                import re
+                corrected = query
+                for pat, rep in corrections.items():
+                    corrected = re.sub(pat, rep, corrected, flags=re.IGNORECASE)
+                tried = False
+                if corrected != query:
+                    tried = True
+                    req2 = discoveryengine.SearchRequest(
+                        serving_config=serving_config,
+                        query=corrected,
+                        page_size=20,
+                        safe_search=False,
+                        query_expansion_spec=discoveryengine.SearchRequest.QueryExpansionSpec(
+                            condition=discoveryengine.SearchRequest.QueryExpansionSpec.Condition.AUTO
+                        ),
+                        spell_correction_spec=discoveryengine.SearchRequest.SpellCorrectionSpec(
+                            mode=discoveryengine.SearchRequest.SpellCorrectionSpec.Mode.AUTO
+                        ),
+                        content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+                            snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
+                                return_snippet=True,
+                                max_snippet_count=5
+                            ),
+                            extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
+                                max_extractive_answer_count=2,
+                                max_extractive_segment_count=5
+                            )
+                        )
+                    )
+                    resp2 = client.search(request=req2)
+                    for result in resp2.results:
+                        document_name = "Unknown Document"
+                        if hasattr(result.document, 'struct_data') and result.document.struct_data:
+                            sd = result.document.struct_data
+                            document_name = sd.get('title') or sd.get('name') or document_name
+                        snips2 = []
+                        if hasattr(result.document, 'derived_struct_data') and result.document.derived_struct_data:
+                            dd = result.document.derived_struct_data
+                            if 'snippets' in dd:
+                                for sn in dd['snippets']:
+                                    if 'snippet' in sn:
+                                        snips2.append(sn['snippet'])
+                            if 'extractive_answers' in dd:
+                                for ans in dd['extractive_answers']:
+                                    tv = ans.get('content') or ans.get('answer') or ans.get('text')
+                                    if tv:
+                                        snips2.append(tv)
+                            if 'extractive_segments' in dd:
+                                for seg in dd['extractive_segments']:
+                                    tv = seg.get('content') or seg.get('segment') or seg.get('text')
+                                    if tv:
+                                        snips2.append(tv)
+                        if not snips2 and hasattr(result.document, 'struct_data') and result.document.struct_data:
+                            content = result.document.struct_data.get('content', '')
+                            if content:
+                                snips2.append(content[:200] + "..." if len(content) > 200 else content)
+                        for sn in snips2:
+                            related_snippets.append({
+                                "text": sn,
+                                "source": document_name,
+                                "relevance_score": 0.8,
+                                "document_url": result.document.id if hasattr(result.document, 'id') else ""
+                            })
+                if tried and len(related_snippets) == 0:
+                    changed_terms = []
+                    for pat, rep in corrections.items():
+                        import re as _re
+                        if _re.search(pat, query, flags=_re.IGNORECASE):
+                            changed_terms.append(rep)
+                    for term in changed_terms:
+                        req3 = discoveryengine.SearchRequest(
+                            serving_config=serving_config,
+                            query=term,
+                            page_size=10,
+                            safe_search=False,
+                            query_expansion_spec=discoveryengine.SearchRequest.QueryExpansionSpec(
+                                condition=discoveryengine.SearchRequest.QueryExpansionSpec.Condition.AUTO
+                            ),
+                            spell_correction_spec=discoveryengine.SearchRequest.SpellCorrectionSpec(
+                                mode=discoveryengine.SearchRequest.SpellCorrectionSpec.Mode.AUTO
+                            ),
+                            content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+                                snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
+                                    return_snippet=True,
+                                    max_snippet_count=3
+                                )
+                            )
+                        )
+                        resp3 = client.search(request=req3)
+                        for result in resp3.results:
+                            name3 = "Unknown Document"
+                            if hasattr(result.document, 'struct_data') and result.document.struct_data:
+                                sd = result.document.struct_data
+                                name3 = sd.get('title') or sd.get('name') or name3
+                            if hasattr(result.document, 'derived_struct_data') and result.document.derived_struct_data:
+                                dd = result.document.derived_struct_data
+                                if 'snippets' in dd:
+                                    for sn in dd['snippets']:
+                                        if 'snippet' in sn:
+                                            related_snippets.append({
+                                                "text": sn['snippet'],
+                                                "source": name3,
+                                                "relevance_score": 0.7,
+                                                "document_url": result.document.id if hasattr(result.document, 'id') else ""
+                                            })
+            except Exception as _e:
+                logger.warning(f"Typo-correction fallback failed: {_e}")
 
         return {
             "success": True,
@@ -295,6 +428,101 @@ async def health_check():
         "vertex_ai_initialized": vertex_ai_initialized,
         "timestamp": "2025-09-17"
     }
+
+
+@app.post("/rag-test")
+async def rag_test_endpoint(request: Dict[str, Any] = None):
+    """Test RAG search with common queries to verify document indexing."""
+    try:
+        test_queries = ["landlord", "tenant", "agreement", "contract", "rental"]
+        results = {}
+        
+        for query in test_queries:
+            search_result = search_related_documents(query)
+            results[query] = {
+                "total_results": search_result.get("total_results", 0),
+                "snippets_preview": [
+                    {
+                        "text": snippet["text"][:100] + "..." if len(snippet["text"]) > 100 else snippet["text"],
+                        "source": snippet["source"]
+                    }
+                    for snippet in search_result.get("related_snippets", [])[:2]
+                ]
+            }
+        
+        return JSONResponse(status_code=200, content={
+            "test_results": results,
+            "summary": {
+                "total_queries": len(test_queries),
+                "queries_with_results": sum(1 for r in results.values() if r["total_results"] > 0),
+                "documents_seem_indexed": any(r["total_results"] > 0 for r in results.values())
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"RAG test error: {str(e)}")
+        return JSONResponse(status_code=200, content={
+            "error": str(e),
+            "test_results": {},
+            "summary": {
+                "documents_seem_indexed": False,
+                "error_occurred": True
+            }
+        })
+
+
+@app.get("/rag-health")
+async def rag_health():
+    """Lightweight check for Discovery Engine availability and engine config."""
+    try:
+        status = {
+            "discovery_engine_available": True,
+            "engine": {
+                "project": os.getenv("RAG_ENGINE_PROJECT", "demystifier-ai"),
+                "location": os.getenv("RAG_ENGINE_LOCATION", "global"),
+                "id": os.getenv("RAG_ENGINE_ID", "synapseragengine_1758347548138"),
+            }
+        }
+        try:
+            client = discoveryengine.SearchServiceClient()
+            status["client_init"] = True
+            
+            # Test search to check if documents are indexed
+            try:
+                project_id = os.getenv("RAG_ENGINE_PROJECT", "demystifier-ai")
+                location = os.getenv("RAG_ENGINE_LOCATION", "global")
+                engine_id = os.getenv("RAG_ENGINE_ID", "synapseragengine_1758347548138")
+                serving_config = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}/servingConfigs/default_config"
+                
+                test_request = discoveryengine.SearchRequest(
+                    serving_config=serving_config,
+                    query="landlord",
+                    page_size=1
+                )
+                test_response = client.search(request=test_request)
+                
+                result_count = len(list(test_response.results))
+                status["test_search"] = {
+                    "query": "landlord",
+                    "results_found": result_count,
+                    "has_documents": result_count > 0
+                }
+                
+            except Exception as se:
+                status["test_search"] = {
+                    "error": str(se),
+                    "has_documents": False
+                }
+                
+        except Exception as ci:
+            status["client_init"] = False
+            status["error"] = str(ci)
+        return JSONResponse(status_code=200, content=status)
+    except Exception as e:
+        return JSONResponse(status_code=200, content={
+            "discovery_engine_available": False,
+            "error": str(e)
+        })
 
 
 @app.post("/upload-document")
