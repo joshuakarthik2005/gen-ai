@@ -1,5 +1,5 @@
-# Ignore sensitive files
-service-account-key.json
+# Ignore sensitive files (service account key is needed for Cloud Run deployment)
+# service-account-key.json
 *.env
 .env.*
 
