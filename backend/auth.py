@@ -4,6 +4,8 @@ Handles user authentication, JWT tokens, and password security
 """
 
 import os
+import json
+import uuid
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -27,8 +29,115 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Security scheme for FastAPI with required=False for optional auth
 security = HTTPBearer(auto_error=False)
 
-# In-memory user storage (in production, use a proper database)
+# In-memory cache; will persist to GCS or local JSON file
 users_db: Dict[str, Dict[str, Any]] = {}
+
+# Persistence configuration
+USERS_BUCKET = os.getenv("USERS_BUCKET", "demystifier-ai_cloudbuild")
+USERS_PREFIX = os.getenv("USERS_PREFIX", "users")
+USERS_LOCAL_FILE = os.getenv("USERS_LOCAL_FILE", os.path.join(os.path.dirname(__file__), "users_db.json"))
+
+try:
+    from google.cloud import storage  # type: ignore
+    GCS_AVAILABLE = True
+except Exception:
+    storage = None  # type: ignore
+    GCS_AVAILABLE = False
+
+def _dt_to_str(dt: datetime) -> str:
+    return dt.isoformat()
+
+def _str_to_dt(s: str) -> datetime:
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        # Fallback: now
+        return datetime.utcnow()
+
+def _stable_user_id(email: str) -> str:
+    # Deterministic UUID based on lowercase email so it remains stable across restarts
+    return f"user_{uuid.uuid5(uuid.NAMESPACE_DNS, email.lower())}"
+
+def _get_storage_client():
+    if not GCS_AVAILABLE:
+        return None
+    try:
+        return storage.Client()
+    except Exception as e:
+        logger.warning(f"GCS client unavailable: {e}")
+        return None
+
+def _user_blob(client, email: str):
+    bucket = client.bucket(USERS_BUCKET)
+    key = f"{USERS_PREFIX}/{email.lower()}.json"
+    return bucket.blob(key)
+
+def _save_user_gcs(user_data: Dict[str, Any]) -> None:
+    client = _get_storage_client()
+    if not client:
+        return
+    try:
+        blob = _user_blob(client, user_data["email"])
+        serializable = {
+            **user_data,
+            "created_at": _dt_to_str(user_data["created_at"]) if isinstance(user_data.get("created_at"), datetime) else user_data.get("created_at"),
+        }
+        blob.upload_from_string(json.dumps(serializable), content_type="application/json")
+        logger.info(f"Persisted user to GCS: {user_data['email']}")
+    except Exception as e:
+        logger.warning(f"Failed to persist user to GCS: {e}")
+
+def _load_user_gcs(email: str) -> Optional[Dict[str, Any]]:
+    client = _get_storage_client()
+    if not client:
+        return None
+    try:
+        blob = _user_blob(client, email)
+        if not blob.exists():
+            return None
+        data = json.loads(blob.download_as_bytes().decode("utf-8"))
+        if isinstance(data.get("created_at"), str):
+            data["created_at"] = _str_to_dt(data["created_at"])
+        return data
+    except Exception as e:
+        logger.warning(f"Failed to load user from GCS: {e}")
+        return None
+
+def _save_user_local(user_data: Dict[str, Any]) -> None:
+    try:
+        # Load existing
+        store = {}
+        if os.path.exists(USERS_LOCAL_FILE):
+            try:
+                with open(USERS_LOCAL_FILE, "r", encoding="utf-8") as f:
+                    store = json.load(f)
+            except Exception:
+                store = {}
+        serializable = {
+            **user_data,
+            "created_at": _dt_to_str(user_data["created_at"]) if isinstance(user_data.get("created_at"), datetime) else user_data.get("created_at"),
+        }
+        store[user_data["email"].lower()] = serializable
+        with open(USERS_LOCAL_FILE, "w", encoding="utf-8") as f:
+            json.dump(store, f)
+        logger.info(f"Persisted user locally: {user_data['email']}")
+    except Exception as e:
+        logger.warning(f"Failed to persist user locally: {e}")
+
+def _load_user_local(email: str) -> Optional[Dict[str, Any]]:
+    try:
+        if not os.path.exists(USERS_LOCAL_FILE):
+            return None
+        with open(USERS_LOCAL_FILE, "r", encoding="utf-8") as f:
+            store = json.load(f)
+        data = store.get(email.lower())
+        if not data:
+            return None
+        if isinstance(data.get("created_at"), str):
+            data["created_at"] = _str_to_dt(data["created_at"])
+        return data
+    except Exception:
+        return None
 
 
 # Pydantic models
@@ -108,7 +217,16 @@ def verify_token(token: str) -> Optional[TokenData]:
 # User management functions
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     """Get a user from the database by email"""
-    return users_db.get(email)
+    # Check cache first
+    user = users_db.get(email)
+    if user:
+        return user
+    # Try persistent stores
+    loaded = _load_user_gcs(email) or _load_user_local(email)
+    if loaded:
+        users_db[email] = loaded
+        return loaded
+    return None
 
 
 def create_user(user_create: UserCreate) -> User:
@@ -124,7 +242,7 @@ def create_user(user_create: UserCreate) -> User:
     
     # Create user data
     user_data = {
-        "id": f"user_{len(users_db) + 1}",
+        "id": _stable_user_id(user_create.email),
         "email": user_create.email,
         "full_name": user_create.full_name,
         "hashed_password": hashed_password,
@@ -134,6 +252,9 @@ def create_user(user_create: UserCreate) -> User:
     
     # Store user in database
     users_db[user_create.email] = user_data
+    # Persist to storage
+    _save_user_gcs(user_data)
+    _save_user_local(user_data)
     
     # Return user without password
     return User(

@@ -1094,6 +1094,7 @@ async def extract_pdf_text(request: ExtractRequest, current_user: User = Depends
     try:
         import io
         import requests
+        from urllib.parse import urlparse
         try:
             from PyPDF2 import PdfReader
         except Exception as e:
@@ -1104,19 +1105,48 @@ async def extract_pdf_text(request: ExtractRequest, current_user: User = Depends
         if not url:
             raise HTTPException(status_code=400, detail="Missing 'url'")
 
-        # Fetch the PDF bytes
-        resp = requests.get(url, timeout=20)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=400, detail=f"Failed to fetch PDF (status {resp.status_code})")
+        # Determine how to fetch the PDF bytes
+        pdf_bytes: bytes
+        try:
+            parsed = urlparse(url)
+            path = parsed.path or ""
+        except Exception:
+            parsed = None
+            path = ""
 
-        # Basic content-type check (not strictly required)
-        ctype = resp.headers.get("content-type", "")
-        if "pdf" not in ctype.lower():
-            logger.warning(f"Content-Type not PDF: {ctype}. Attempting to parse anyway.")
+        # If the URL points to our backend proxy-gcs route, fetch directly from GCS
+        if path.startswith("/proxy-gcs/") and GCS_AVAILABLE:
+            try:
+                parts = path[len("/proxy-gcs/"):].split("/", 1)
+                if len(parts) != 2:
+                    raise ValueError("Invalid proxy-gcs path")
+                bucket_name, file_path = parts[0], parts[1]
+                client = storage.Client()
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(file_path)
+                if not blob.exists():
+                    raise HTTPException(status_code=404, detail="File not found in storage")
+                pdf_bytes = blob.download_as_bytes()
+                ctype = blob.content_type or "application/pdf"
+            except HTTPException:
+                raise
+            except Exception as ge:
+                logger.error(f"GCS fetch in extract_pdf_text failed: {ge}")
+                raise HTTPException(status_code=500, detail=f"GCS access failed: {str(ge)}")
+        else:
+            # Fallback to HTTP(S) fetch
+            resp = requests.get(url, timeout=20)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Failed to fetch PDF (status {resp.status_code})")
+            pdf_bytes = resp.content
+            # Basic content-type check (not strictly required)
+            ctype = resp.headers.get("content-type", "")
+            if "pdf" not in ctype.lower():
+                logger.warning(f"Content-Type not PDF: {ctype}. Attempting to parse anyway.")
 
         # Extract text
         try:
-            reader = PdfReader(io.BytesIO(resp.content))
+            reader = PdfReader(io.BytesIO(pdf_bytes))
             text_parts = []
             for page in reader.pages:
                 try:
@@ -1207,8 +1237,7 @@ async def get_user_files(current_user: User = Depends(require_auth)):
             # List blobs in user's folder
             user_prefix = f"documents/users/{current_user.id}/"
             blobs = list(bucket.list_blobs(prefix=user_prefix))
-            
-            # Format file information
+
             user_files = []
             for blob in blobs:
                 # Skip directory markers
@@ -1241,6 +1270,37 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                 }
                 
                 user_files.append(file_info)
+
+            # Backward-compat: if none found (due to older user IDs), scan all user docs and filter by metadata email
+            if not user_files:
+                try:
+                    logger.info("No files under stable ID path; scanning all user documents for this email")
+                    all_blobs = bucket.list_blobs(prefix="documents/users/")
+                    for blob in all_blobs:
+                        if blob.name.endswith('/'):
+                            continue
+                        meta = blob.metadata or {}
+                        if meta.get('user_email') != current_user.email:
+                            continue
+                        filename = meta.get('original_filename', blob.name.split('/')[-1])
+                        try:
+                            signed_url = blob.generate_signed_url(
+                                expiration=datetime.utcnow() + timedelta(hours=1),
+                                method='GET'
+                            )
+                        except Exception as url_error:
+                            logger.warning(f"Failed to generate signed URL for {blob.name}: {url_error}")
+                            signed_url = f"/api/proxy-gcs/{bucket_name}/{blob.name}"
+                        user_files.append({
+                            "id": blob.name,
+                            "name": filename,
+                            "url": signed_url,
+                            "upload_date": blob.time_created.isoformat() if blob.time_created else None,
+                            "size": blob.size,
+                            "type": "pdf"
+                        })
+                except Exception as scan_err:
+                    logger.warning(f"Fallback scan for user documents failed: {scan_err}")
             
             # Sort by upload date (newest first)
             user_files.sort(key=lambda x: x['upload_date'] or '', reverse=True)
