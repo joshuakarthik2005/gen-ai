@@ -348,28 +348,8 @@ const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto">
-        {/* Quick Access */}
-        <div className="p-4 border-b border-gray-200">
-          <div className="space-y-1">
-            <button className="w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-100 rounded-md transition-colors">
-              <Star className="w-4 h-4 text-yellow-500" />
-              <span className="text-sm text-gray-700">Starred</span>
-              <span className="ml-auto text-xs text-gray-400">
-                {isHydrated ? documents.filter(doc => doc.starred).length : getDefaultDocuments().filter(doc => doc.starred).length}
-              </span>
-            </button>
-            
-            <button className="w-full flex items-center space-x-3 px-3 py-2 text-left hover:bg-gray-100 rounded-md transition-colors">
-              <Clock className="w-4 h-4 text-gray-500" />
-              <span className="text-sm text-gray-700">Recent</span>
-              <span className="ml-auto text-xs text-gray-400">
-                {isHydrated ? documents.length : getDefaultDocuments().length}
-              </span>
-            </button>
-          </div>
-        </div>
 
-        {/* Document List */}
+  {/* Document List */}
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
             <button

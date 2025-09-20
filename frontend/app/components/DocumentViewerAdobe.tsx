@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useId } from "react";
+import ReactDOM from "react-dom";
 import { FileText, MessageSquare, X, Send, Bot, User } from "lucide-react";
 import { API_CONFIG, getApiUrl } from "../config/api";
 import { withAuthHeaders } from "../utils/auth";
@@ -23,6 +24,8 @@ interface ExplainTooltipProps {
   selectedText: string;
   onExplain: (text: string) => void;
   onClose: () => void;
+  position?: "fixed" | "absolute";
+  bounds?: { width: number; height: number };
 }
 
 interface ChatMessage {
@@ -38,7 +41,7 @@ declare global {
   }
 }
 
-function ExplainTooltip({ x, y, selectedText, onExplain, onClose }: ExplainTooltipProps) {
+function ExplainTooltip({ x, y, selectedText, onExplain, onClose, position = "fixed", bounds }: ExplainTooltipProps) {
   const tooltipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,14 +66,17 @@ function ExplainTooltip({ x, y, selectedText, onExplain, onClose }: ExplainToolt
     };
   }, [onClose]);
 
+  // Compute safe positions (avoid edges)
+  const maxW = bounds?.width ?? window.innerWidth;
+  const maxH = bounds?.height ?? window.innerHeight;
+  const safeLeft = Math.max(12, Math.min(x, maxW - 12));
+  const safeTop = Math.max(12, Math.min(y + 8, maxH - 12));
+
   return (
     <div 
       ref={tooltipRef}
-      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs animate-in fade-in duration-200"
-      style={{ 
-        left: Math.min(x, window.innerWidth - 320), 
-        top: Math.max(y - 100, 10) 
-      }}
+      className={`${position === 'absolute' ? 'absolute' : 'fixed'} z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs animate-in fade-in duration-200 transform -translate-x-1/2`}
+      style={{ left: safeLeft, top: safeTop }}
     >
       <div className="flex items-start justify-between mb-2">
         <div className="text-xs text-gray-600 line-clamp-3 pr-2">
@@ -131,6 +137,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
   const viewerId = `adobe-dc-view-${reactId}`;
   const sdkReadyRef = useRef(false);
   const selectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastExplainedRef = useRef<string>("");
 
   const closeTooltip = () => {
     setTooltipPosition(null);
@@ -420,22 +427,14 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
             apis.getSelectedContent()
               .then((result: any) => {
                 if (result && result.data && result.data.trim()) {
-                  const selection = window.getSelection();
-                  if (selection && selection.rangeCount > 0) {
-                    const range = selection.getRangeAt(0);
-                    const rect = range.getBoundingClientRect();
-                    
-                    // Only show tooltip if we have a valid selection and position
-                    if (rect.width > 0 && rect.height > 0) {
-                      setSelectedText(result.data.trim());
-                      setTooltipPosition({
-                        x: rect.left + (rect.width / 2),
-                        y: rect.top + window.scrollY
-                      });
-                    }
+                  const text = result.data.trim();
+                  if (text && text !== lastExplainedRef.current) {
+                    lastExplainedRef.current = text;
+                    setSelectedText(text);
+                    handleExplainText(text);
                   }
                 } else {
-                  // No selection, hide tooltip
+                  // No selection
                   setTooltipPosition(null);
                   setSelectedText("");
                 }
@@ -470,17 +469,12 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
             if (!event || !event.type) return;
             
             if (event.type === 'PREVIEW_SELECTION_END' && event.data?.selections) {
-            // Text has been selected
             const selection = window.getSelection();
-            if (selection && selection.toString().trim()) {
-              const range = selection.getRangeAt(0);
-              const rect = range.getBoundingClientRect();
-              
-              setSelectedText(selection.toString().trim());
-              setTooltipPosition({
-                x: rect.left + (rect.width / 2),
-                y: rect.top + window.scrollY
-              });
+            const text = selection?.toString().trim() || "";
+            if (text && text !== lastExplainedRef.current) {
+              lastExplainedRef.current = text;
+              setSelectedText(text);
+              handleExplainText(text);
             }
             } else if (event.type === 'PREVIEW_PAGE_CLICK' || event.type === 'PREVIEW_DOCUMENT_CLICK') {
             // Clear selection when clicking elsewhere
@@ -544,16 +538,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
           style={{ minHeight: '600px' }}
         />
 
-        {/* Explain Tooltip */}
-        {tooltipPosition && selectedText && (
-          <ExplainTooltip
-            x={tooltipPosition.x}
-            y={tooltipPosition.y}
-            selectedText={selectedText}
-            onExplain={handleExplainText}
-            onClose={closeTooltip}
-          />
-        )}
+        {/* Explain Tooltip removed: auto-trigger explain and RAG on selection */}
 
         
 

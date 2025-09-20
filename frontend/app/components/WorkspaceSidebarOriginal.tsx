@@ -206,19 +206,7 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
         </div>
       </div>
 
-      {/* Quick Access */}
-      <div className="p-4 space-y-2">
-        <div className="flex items-center space-x-3 text-sm text-gray-600 hover:text-gray-900 cursor-pointer p-2 rounded-lg hover:bg-gray-100">
-          <Star className="w-4 h-4" />
-          <span>Starred</span>
-          <span className="ml-auto text-xs text-gray-400">2</span>
-        </div>
-        <div className="flex items-center space-x-3 text-sm text-gray-600 hover:text-gray-900 cursor-pointer p-2 rounded-lg hover:bg-gray-100">
-          <Clock className="w-4 h-4" />
-          <span>Recent</span>
-          <span className="ml-auto text-xs text-gray-400">14</span>
-        </div>
-      </div>
+      {/* Quick Access removed */}
 
       {/* Recent Documents */}
       <div className="flex-1 overflow-y-auto">
