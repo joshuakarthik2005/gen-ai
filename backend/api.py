@@ -1211,10 +1211,11 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                     "message": "Mock data - GCS not configured"
                 }
             )
-        
+
         # Google Cloud Storage configuration
         bucket_name = "demystifier-ai_cloudbuild"
-        
+        strict_isolation = os.getenv("STRICT_USER_ISOLATION", "true").lower() == "true"
+
         try:
             # Initialize GCS client with service account credentials
             service_account_path = "service-account-key.json"
@@ -1271,8 +1272,8 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                 
                 user_files.append(file_info)
 
-            # Backward-compat: if none found (due to older user IDs), scan all user docs and filter by metadata email
-            if not user_files:
+            # Backward-compat: if none found (due to older user IDs), optionally scan all docs and filter by user email
+            if not user_files and not strict_isolation:
                 try:
                     logger.info("No files under stable ID path; scanning all user documents for this email")
                     all_blobs = bucket.list_blobs(prefix="documents/users/")
@@ -1321,7 +1322,7 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                 status_code=500,
                 detail=f"Failed to retrieve files from Google Cloud Storage: {str(gcs_error)}"
             )
-            
+        
     except HTTPException:
         raise
     except Exception as e:

@@ -64,7 +64,7 @@ export default function WorkspaceSidebar({ onDocumentSelect, onDocumentCompare }
     setError("");
 
     try {
-      const token = localStorage.getItem("access_token");
+  const token = localStorage.getItem("token");
       if (!token) {
         throw new Error("No access token found");
       }
@@ -108,8 +108,8 @@ export default function WorkspaceSidebar({ onDocumentSelect, onDocumentCompare }
       const formData = new FormData();
       formData.append("file", file);
 
-      const headers: Record<string, string> = {};
-      const token = localStorage.getItem("access_token");
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem("token");
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
