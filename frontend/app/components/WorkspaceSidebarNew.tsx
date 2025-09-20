@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { FileText, Clock, Upload, User, FolderOpen, Lock } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { FileText, Clock, Upload, User, FolderOpen, Lock, Plus, GitCompare, X, Check } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { BASE_URL } from "../config/api";
 
@@ -16,13 +16,19 @@ interface WorkspaceDocument {
 
 interface WorkspaceSidebarProps {
   onDocumentSelect: (document: WorkspaceDocument) => void;
+  onDocumentCompare?: (originalDoc: WorkspaceDocument, modifiedDoc: WorkspaceDocument) => void;
 }
 
-export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarProps) {
+export default function WorkspaceSidebar({ onDocumentSelect, onDocumentCompare }: WorkspaceSidebarProps) {
   const { isAuthenticated, user, setShowAuthModal } = useAuth();
   const [userFiles, setUserFiles] = useState<WorkspaceDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string>("");
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedForComparison, setSelectedForComparison] = useState<WorkspaceDocument[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sample documents available for all users
   const sampleDocuments: WorkspaceDocument[] = [
@@ -86,6 +92,69 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
     }
   };
 
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (!file.type.includes('pdf')) {
+      setUploadMessage("Please select PDF files only");
+      return;
+    }
+
+    setUploading(true);
+    setUploadMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const headers: Record<string, string> = {};
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${BASE_URL}/upload-pdf`, {
+        method: "POST",
+        body: formData,
+        headers,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Upload failed");
+      }
+
+      const data = await response.json();
+      setUploadMessage(`Successfully uploaded ${file.name}`);
+      
+      // Refresh user files if authenticated
+      if (isAuthenticated) {
+        fetchUserFiles();
+      }
+
+      setTimeout(() => setUploadMessage(""), 3000);
+    } catch (error) {
+      console.error("Upload error:", error);
+      setUploadMessage(`Failed to upload: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFileUpload(e.target.files);
+    e.target.value = ''; // Reset input
+  };
+
+  const handleUploadClick = () => {
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
@@ -102,15 +171,46 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
   };
 
   const handleDocumentClick = (document: WorkspaceDocument) => {
-    onDocumentSelect(document);
+    if (compareMode) {
+      // Handle comparison selection
+      if (selectedForComparison.find(doc => doc.id === document.id)) {
+        // Remove from selection
+        setSelectedForComparison(prev => prev.filter(doc => doc.id !== document.id));
+      } else if (selectedForComparison.length < 2) {
+        // Add to selection
+        setSelectedForComparison(prev => [...prev, document]);
+      }
+    } else {
+      // Normal document selection
+      onDocumentSelect(document);
+    }
+  };
+
+  const handleCompareDocuments = () => {
+    if (selectedForComparison.length === 2 && onDocumentCompare) {
+      onDocumentCompare(selectedForComparison[0], selectedForComparison[1]);
+      setCompareMode(false);
+      setSelectedForComparison([]);
+    }
   };
 
   const handleAuthRequired = () => {
     setShowAuthModal(true);
   };
 
+  const allDocuments = [...userFiles, ...sampleDocuments];
+
   return (
     <div className="h-full bg-gray-50 border-r border-gray-200 flex flex-col">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+
       {/* Header */}
       <div className="p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center space-x-2">
@@ -122,8 +222,82 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
         )}
       </div>
 
+      {/* Upload Section */}
+      <div className="p-4 border-b border-gray-200 bg-white">
+        {uploadMessage && (
+          <div className={`mb-3 p-2 rounded-lg text-xs text-center ${
+            uploadMessage.includes('Failed') || uploadMessage.includes('Please')
+              ? 'bg-red-50 border border-red-200 text-red-700'
+              : 'bg-green-50 border border-green-200 text-green-700'
+          }`}>
+            {uploadMessage}
+          </div>
+        )}
+
+        <button
+          onClick={handleUploadClick}
+          disabled={uploading}
+          className={`w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-lg transition-colors ${
+            isAuthenticated
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+          }`}
+        >
+          {uploading ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm font-medium">Uploading...</span>
+            </>
+          ) : (
+            <>
+              <Plus className="w-4 h-4" />
+              <span className="text-sm font-medium">
+                {isAuthenticated ? 'Upload Document' : 'Sign In to Upload'}
+              </span>
+            </>
+          )}
+        </button>
+
+        {/* Compare Mode Toggle */}
+        <div className="mt-3 flex items-center justify-between">
+          <button
+            onClick={() => {
+              setCompareMode(!compareMode);
+              setSelectedForComparison([]);
+            }}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm transition-colors ${
+              compareMode
+                ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <GitCompare className="w-4 h-4" />
+            <span>{compareMode ? 'Exit Compare' : 'Compare Mode'}</span>
+          </button>
+
+          {compareMode && selectedForComparison.length === 2 && (
+            <button
+              onClick={handleCompareDocuments}
+              className="flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors"
+            >
+              <Check className="w-4 h-4" />
+              <span>Compare</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {/* Compare Mode Instructions */}
+        {compareMode && (
+          <div className="p-4 bg-orange-50 border-b border-orange-200">
+            <p className="text-sm text-orange-700">
+              Select 2 documents to compare ({selectedForComparison.length}/2 selected)
+            </p>
+          </div>
+        )}
+
         {/* User Files Section - Only show for authenticated users */}
         {isAuthenticated && (
           <div className="p-4">
@@ -157,35 +331,43 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
 
             {!loading && userFiles.length > 0 && (
               <div className="space-y-2">
-                {userFiles.slice(0, 5).map((file) => (
-                  <div
-                    key={file.id}
-                    onClick={() => handleDocumentClick(file)}
-                    className="p-3 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-all"
-                  >
-                    <div className="flex items-start space-x-3">
-                      <FileText className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <Clock className="w-3 h-3 text-gray-400" />
-                          <span className="text-xs text-gray-500">
-                            {file.upload_date ? formatDate(file.upload_date) : "Unknown"}
-                          </span>
+                {userFiles.map((file) => {
+                  const isSelected = selectedForComparison.find(doc => doc.id === file.id);
+                  return (
+                    <div
+                      key={file.id}
+                      onClick={() => handleDocumentClick(file)}
+                      className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-orange-100 border-orange-300'
+                          : 'bg-white border-gray-200 hover:bg-blue-50 hover:border-blue-300'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <FileText className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                          isSelected ? 'text-orange-600' : 'text-blue-600'
+                        }`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <Clock className="w-3 h-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">
+                              {file.upload_date ? formatDate(file.upload_date) : "Unknown"}
+                            </span>
+                          </div>
+                          {file.size && (
+                            <p className="text-xs text-gray-400 mt-1">{formatFileSize(file.size)}</p>
+                          )}
                         </div>
-                        {file.size && (
-                          <p className="text-xs text-gray-400 mt-1">{formatFileSize(file.size)}</p>
+                        {isSelected && (
+                          <div className="text-orange-600">
+                            <Check className="w-4 h-4" />
+                          </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
-
-                {userFiles.length > 5 && (
-                  <p className="text-xs text-gray-500 text-center py-2">
-                    and {userFiles.length - 5} more files...
-                  </p>
-                )}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -199,29 +381,43 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
           </div>
 
           <div className="space-y-2">
-            {sampleDocuments.map((document) => (
-              <div
-                key={document.id}
-                onClick={() => handleDocumentClick(document)}
-                className="p-3 bg-white border border-gray-200 rounded-lg hover:bg-green-50 hover:border-green-300 cursor-pointer transition-all"
-              >
-                <div className="flex items-start space-x-3">
-                  <FileText className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{document.name}</p>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <Clock className="w-3 h-3 text-gray-400" />
-                      <span className="text-xs text-gray-500">
-                        {document.upload_date ? formatDate(document.upload_date) : "Sample"}
-                      </span>
+            {sampleDocuments.map((document) => {
+              const isSelected = selectedForComparison.find(doc => doc.id === document.id);
+              return (
+                <div
+                  key={document.id}
+                  onClick={() => handleDocumentClick(document)}
+                  className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                    isSelected
+                      ? 'bg-orange-100 border-orange-300'
+                      : 'bg-white border-gray-200 hover:bg-green-50 hover:border-green-300'
+                  }`}
+                >
+                  <div className="flex items-start space-x-3">
+                    <FileText className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                      isSelected ? 'text-orange-600' : 'text-green-600'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{document.name}</p>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <Clock className="w-3 h-3 text-gray-400" />
+                        <span className="text-xs text-gray-500">
+                          {document.upload_date ? formatDate(document.upload_date) : "Sample"}
+                        </span>
+                      </div>
+                      {document.size && (
+                        <p className="text-xs text-gray-400 mt-1">{formatFileSize(document.size)}</p>
+                      )}
                     </div>
-                    {document.size && (
-                      <p className="text-xs text-gray-400 mt-1">{formatFileSize(document.size)}</p>
+                    {isSelected && (
+                      <div className="text-orange-600">
+                        <Check className="w-4 h-4" />
+                      </div>
                     )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

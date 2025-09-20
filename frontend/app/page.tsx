@@ -7,6 +7,7 @@ import Header from "./components/Header";
 import DocumentViewer from "./components/DocumentViewerAdobe";
 import WorkspaceSidebar from "./components/WorkspaceSidebarNew";
 import SynapsePanel from "./components/SynapsePanel";
+import ComparisonView from "./components/ComparisonView";
 import AuthModal from "./components/AuthModal";
 import { useAuth } from "./contexts/AuthContext";
 
@@ -29,6 +30,14 @@ export default function Dashboard() {
     name: "Sample Employment Agreement"
   });
   const [ragSearchQuery, setRagSearchQuery] = useState<string>("");
+  const [viewMode, setViewMode] = useState<'document' | 'comparison'>('document');
+  const [comparisonDocuments, setComparisonDocuments] = useState<{
+    original: { url: string; filename: string } | null;
+    modified: { url: string; filename: string } | null;
+  }>({
+    original: null,
+    modified: null
+  });
 
   const handleExplainText = (text: string) => {
     setExplainedText(text);
@@ -48,6 +57,17 @@ export default function Dashboard() {
         url: document.url,
         name: document.name
       });
+      setViewMode('document');
+    }
+  };
+
+  const handleDocumentCompare = (originalDoc: WorkspaceDocument, modifiedDoc: WorkspaceDocument) => {
+    if (originalDoc.url && modifiedDoc.url) {
+      setComparisonDocuments({
+        original: { url: originalDoc.url, filename: originalDoc.name },
+        modified: { url: modifiedDoc.url, filename: modifiedDoc.name }
+      });
+      setViewMode('comparison');
     }
   };
 
@@ -68,28 +88,58 @@ export default function Dashboard() {
         <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
           {/* Left Panel - Workspace Sidebar */}
           <div className="order-2 md:order-1 md:w-[20%] md:min-w-[280px] bg-gray-50 border-t md:border-t-0 md:border-r border-gray-200">
-            <WorkspaceSidebar onDocumentSelect={handleDocumentSelect} />
+            <WorkspaceSidebar 
+              onDocumentSelect={handleDocumentSelect} 
+              onDocumentCompare={handleDocumentCompare}
+            />
           </div>
 
-          {/* Center Panel - Document Viewer */}
+          {/* Center Panel - Document Viewer or Comparison */}
           <div className="order-1 md:order-2 md:w-[50%] md:min-w-[400px] bg-white min-h-[40vh] md:min-h-0">
-            <DocumentViewer 
-              documentUrl={selectedDocument.url}
-              filename={selectedDocument.name}
-              onExplainText={handleExplainText}
-              onRagSearch={handleRagSearch}
-            />
+            {viewMode === 'document' ? (
+              <DocumentViewer 
+                documentUrl={selectedDocument.url}
+                filename={selectedDocument.name}
+                onExplainText={handleExplainText}
+                onRagSearch={handleRagSearch}
+              />
+            ) : (
+              comparisonDocuments.original && comparisonDocuments.modified && (
+                <div className="h-full overflow-auto">
+                  <div className="p-4 border-b border-gray-200 bg-white">
+                    <h3 className="text-lg font-semibold text-gray-900">Document Comparison</h3>
+                    <p className="text-sm text-gray-600">
+                      {comparisonDocuments.original.filename} vs {comparisonDocuments.modified.filename}
+                    </p>
+                    <button
+                      onClick={() => setViewMode('document')}
+                      className="mt-2 text-blue-600 hover:text-blue-700 text-sm"
+                    >
+                      ← Back to Document View
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    <ComparisonView
+                      originalDocument={comparisonDocuments.original}
+                      modifiedDocument={comparisonDocuments.modified}
+                    />
+                  </div>
+                </div>
+              )
+            )}
           </div>
 
-          {/* Right Panel - Synapse Analysis */}
-          <div className="order-3 md:order-3 md:w-[30%] md:min-w-[320px] bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200">
-            <SynapsePanel 
-              explainedText={explainedText}
-              documentUrl={selectedDocument.url}
-              filename={selectedDocument.name}
-              ragSearchQuery={ragSearchQuery}
-            />
-          </div>
+          {/* Right Panel - Synapse Analysis (only show in document mode) */}
+          {viewMode === 'document' && (
+            <div className="order-3 md:order-3 md:w-[30%] md:min-w-[320px] bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200">
+              <SynapsePanel 
+                explainedText={explainedText}
+                documentUrl={selectedDocument.url}
+                filename={selectedDocument.name}
+                ragSearchQuery={ragSearchQuery}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
