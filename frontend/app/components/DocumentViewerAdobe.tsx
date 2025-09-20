@@ -307,16 +307,23 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
       const filePromise = (async () => {
         // If the URL is cross-origin, route through our proxy to avoid CORS.
         let fetchUrl = documentUrl;
+        let fetchHeaders: HeadersInit = {};
+        
         try {
           const u = new URL(documentUrl, window.location.origin);
           const isCrossOrigin = u.origin !== window.location.origin;
           if (isCrossOrigin) {
             fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
+            // Include auth headers for the proxy request
+            fetchHeaders = await withAuthHeaders({});
           }
         } catch {
           // If it isn't a valid absolute/relative URL, try as-is
+          // But still include auth headers in case it's a relative backend URL
+          fetchHeaders = await withAuthHeaders({});
         }
-        const res = await fetch(fetchUrl);
+        
+        const res = await fetch(fetchUrl, { headers: fetchHeaders });
         if (!res.ok) throw new Error(`Failed to fetch PDF: ${res.status}`);
         return await res.arrayBuffer();
       })();

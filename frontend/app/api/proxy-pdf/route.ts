@@ -19,9 +19,29 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Check if this is a request to our own backend proxy endpoint
+    const isBackendProxyUrl = target.pathname.startsWith('/api/proxy-gcs') || 
+                             target.pathname.startsWith('/proxy-gcs');
+    
+    const headers: Record<string, string> = {
+      "User-Agent": req.headers.get("user-agent") || "Mozilla/5.0"
+    };
+    
+    // If this is our backend proxy, pass through authentication headers
+    if (isBackendProxyUrl) {
+      const authHeader = req.headers.get("authorization");
+      if (authHeader) {
+        headers["Authorization"] = authHeader;
+      }
+      // Also check for cookie-based auth
+      const cookie = req.headers.get("cookie");
+      if (cookie) {
+        headers["Cookie"] = cookie;
+      }
+    }
+    
     const upstream = await fetch(target.toString(), {
-      // A UA helps some hosts return the asset
-      headers: { "User-Agent": req.headers.get("user-agent") || "Mozilla/5.0" },
+      headers,
       // Disable Next caching for dynamic proxies
       cache: "no-store",
     });
