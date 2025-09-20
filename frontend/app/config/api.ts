@@ -16,6 +16,7 @@ export const API_CONFIG = {
     CHAT: "/chat",
     EXTRACT_PDF_TEXT: "/extract-pdf-text",
     RAG_SEARCH: "/rag-search",
+    UPLOAD_PDF: "/upload-pdf",
     ROOT: "/"
   },
   

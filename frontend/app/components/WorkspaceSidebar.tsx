@@ -14,6 +14,8 @@ import {
   Settings,
   User
 } from "lucide-react";
+import { API_CONFIG, getApiUrl } from "../config/api";
+import { withAuthHeaders } from "../utils/auth";
 
 interface Document {
   id: string;
@@ -138,35 +140,78 @@ const WorkspaceSidebar = ({ onDocumentSelect }: WorkspaceSidebarProps) => {
     };
   }, []);
 
-  const handleFileUpload = (files: FileList | null) => {
+  const handleFileUpload = async (files: FileList | null) => {
     if (!files) return;
     
     console.log('handleFileUpload called with files:', files.length);
     const uploadedFiles: string[] = [];
     
-    Array.from(files).forEach((file) => {
+    for (const file of Array.from(files)) {
       console.log('Processing file:', file.name, file.type);
       if (file.type === "application/pdf" || file.name.endsWith('.pdf')) {
-        // Create a blob URL for the uploaded file
-        const fileUrl = URL.createObjectURL(file);
-        
-        const newDocument: Document = {
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-          name: file.name.replace('.pdf', ''),
-          type: 'PDF Document',
-          lastModified: 'Just now',
-          starred: false,
-          url: fileUrl
-        };
-        
-        setDocuments(prev => [newDocument, ...prev]);
-        uploadedFiles.push(file.name);
-        
-        console.log('Document added:', newDocument);
+        try {
+          // Try to upload to backend first
+          const formData = new FormData();
+          formData.append('file', file);
+
+          // Use authentication headers if available
+          let headers = {};
+          try {
+            headers = await withAuthHeaders({});
+            console.log('Using authenticated upload');
+          } catch (authError) {
+            console.log('Authentication not available, proceeding with anonymous upload');
+          }
+
+          const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.UPLOAD_PDF), {
+            method: 'POST',
+            headers,
+            body: formData,
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            console.log('Backend upload successful:', result);
+            
+            const newDocument: Document = {
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+              name: file.name.replace('.pdf', ''),
+              type: 'PDF Document',
+              lastModified: 'Just now',
+              starred: false,
+              url: result.signed_url || result.url || URL.createObjectURL(file) // Use signed URL or fallback
+            };
+            
+            setDocuments(prev => [newDocument, ...prev]);
+            uploadedFiles.push(file.name);
+            console.log('Document added with backend URL:', newDocument);
+          } else {
+            const errorText = await response.text();
+            console.error('Upload failed:', response.status, errorText);
+            throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+          }
+        } catch (error) {
+          console.warn('Backend upload failed, using local blob:', error);
+          // Fallback to local blob URL
+          const fileUrl = URL.createObjectURL(file);
+          
+          const newDocument: Document = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            name: file.name.replace('.pdf', ''),
+            type: 'PDF Document',
+            lastModified: 'Just now',
+            starred: false,
+            url: fileUrl
+          };
+          
+          setDocuments(prev => [newDocument, ...prev]);
+          uploadedFiles.push(file.name);
+          console.log('Document added (local fallback):', newDocument);
+        }
       } else {
         alert('Please upload only PDF files.');
       }
-    });
+    }
     
     if (uploadedFiles.length > 0) {
       setUploadMessage(`Successfully uploaded ${uploadedFiles.length} document${uploadedFiles.length > 1 ? 's' : ''}`);
