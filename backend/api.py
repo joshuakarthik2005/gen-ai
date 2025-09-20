@@ -395,11 +395,12 @@ async def root():
             "/register": "POST - Register a new user account",
             "/login": "POST - Login and get access token",
             "/me": "GET - Get current user profile (requires auth)",
+            "/user-files": "GET - Get user's uploaded files (requires auth)",
             "/analyze-document": "POST - Upload a legal document for analysis (requires auth)",
             "/analyze-text": "POST - Analyze legal text directly (requires auth)",
             "/summarize": "POST - Summarize legal text in layman terms (requires auth)",
             "/summarize-upload": "POST - Upload and summarize a legal document (requires auth)",
-            "/upload-document": "POST - Upload document to cloud storage (requires auth)",
+            "/upload-pdf": "POST - Upload PDF to cloud storage (optional auth)",
             "/extract-pdf-text": "POST - Extract text from PDF URL (requires auth)",
             "/explain-selection": "POST - Explain selected text (requires auth)",
             "/rag-search": "POST - Search for related document snippets using Vertex AI Search (requires auth)",
@@ -635,10 +636,11 @@ async def analyze_text_endpoint(request: Dict[str, str], current_user: User = De
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
-@app.post("/upload-document")
-async def upload_document(file: UploadFile = File(...), current_user: User = Depends(require_auth)):
+@app.post("/upload-pdf")
+async def upload_pdf(file: UploadFile = File(...), current_user: Optional[User] = Depends(optional_auth)):
     """
-    Upload a PDF document to Google Cloud Storage and return a signed URL (requires authentication)
+    Upload a PDF document to Google Cloud Storage and return a signed URL
+    Requires authentication for file storage, but allows unauthenticated demo usage
     
     - **file**: PDF document file to upload
     """
@@ -679,13 +681,31 @@ async def upload_document(file: UploadFile = File(...), current_user: User = Dep
             client = storage.Client()
             bucket = client.bucket(bucket_name)
             
-            # Generate unique filename
+            # Generate unique filename with user-specific path
             file_extension = os.path.splitext(file.filename)[1] if file.filename else '.pdf'
-            unique_filename = f"documents/{uuid.uuid4()}{file_extension}"
+            
+            if current_user:
+                # Authenticated user - store in user-specific folder
+                unique_filename = f"documents/users/{current_user.id}/{uuid.uuid4()}{file_extension}"
+                logger.info(f"Uploading file for authenticated user: {current_user.email}")
+            else:
+                # Unauthenticated user - store in temporary folder
+                unique_filename = f"documents/temp/{uuid.uuid4()}{file_extension}"
+                logger.info("Uploading file for unauthenticated user")
             
             # Create blob and upload content
             blob = bucket.blob(unique_filename)
             blob.upload_from_string(content, content_type='application/pdf')
+            
+            # Set metadata if user is authenticated
+            if current_user:
+                blob.metadata = {
+                    "user_id": current_user.id,
+                    "user_email": current_user.email,
+                    "original_filename": file.filename,
+                    "upload_timestamp": datetime.utcnow().isoformat()
+                }
+                blob.patch()
             
             # Generate signed URL (valid for 1 hour)
             signed_url = blob.generate_signed_url(
@@ -700,7 +720,8 @@ async def upload_document(file: UploadFile = File(...), current_user: User = Dep
                 content={
                     "signed_url": signed_url,
                     "filename": file.filename,
-                    "blob_name": unique_filename
+                    "blob_name": unique_filename,
+                    "user_authenticated": current_user is not None
                 }
             )
             
@@ -714,7 +735,7 @@ async def upload_document(file: UploadFile = File(...), current_user: User = Dep
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in upload_document: {str(e)}")
+        logger.error(f"Unexpected error in upload_pdf: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
@@ -1092,83 +1113,108 @@ async def extract_pdf_text(request: ExtractRequest, current_user: User = Depends
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
-@app.post("/chat")
-async def chat_endpoint(request: ChatRequest, current_user: User = Depends(require_auth)):
+@app.get("/user-files")
+async def get_user_files(current_user: User = Depends(require_auth)):
     """
-    Chat with AI about the document (requires authentication)
-    
-    - **message**: User's question about the document
-    - **document_text**: Optional full document text for context
+    Get list of files uploaded by the current user (requires authentication)
     """
     try:
-        message = request.message.strip()
-        document_text = request.document_text.strip()
-        
-        if not message:
-            raise HTTPException(status_code=400, detail="No message provided")
-        
-        # Initialize Vertex AI if not already done
-        global vertex_ai_initialized, model
-        if not vertex_ai_initialized:
-            if not initialize_vertex_ai():
-                return JSONResponse(
-                    status_code=200,
-                    content={
-                        "response": "I'm sorry, but I'm currently unable to access the AI service. Please try again later.",
-                        "model_used": "fallback"
-                    }
-                )
-        
-        # Create a contextual prompt for the chat
-        if document_text:
-            # Include document context in the prompt
-            prompt = f"""You are a helpful legal assistant. A user is asking questions about a legal document. 
-Please provide clear, helpful answers in plain English, avoiding legal jargon when possible.
-
-Document context (first 5000 characters):
-{document_text[:5000]}
-
-User question: {message}
-
-Please provide a helpful response about the document or legal concepts mentioned."""
-        else:
-            # General legal assistance without document context
-            prompt = f"""You are a helpful legal assistant. Please answer the user's question about legal matters in plain English, avoiding jargon when possible.
-
-User question: {message}
-
-Please provide a helpful, informative response."""
-        
-        try:
-            # Generate response using Gemini
-            logger.info("Sending chat request to Gemini...")
-            response = model.generate_content(prompt)
+        if not GCS_AVAILABLE:
+            # Return mock data for development
+            mock_files = [
+                {
+                    "id": "mock-file-1",
+                    "name": "Employment_Agreement.pdf",
+                    "url": "https://storage.googleapis.com/mock-bucket/mock-file-1.pdf",
+                    "upload_date": "2024-01-15T10:30:00Z",
+                    "size": 245760
+                },
+                {
+                    "id": "mock-file-2", 
+                    "name": "Service_Contract.pdf",
+                    "url": "https://storage.googleapis.com/mock-bucket/mock-file-2.pdf",
+                    "upload_date": "2024-01-14T15:45:00Z",
+                    "size": 189440
+                }
+            ]
             
             return JSONResponse(
                 status_code=200,
                 content={
-                    "response": response.text,
-                    "model_used": "gemini-1.5-pro"
+                    "files": mock_files,
+                    "total": len(mock_files),
+                    "message": "Mock data - GCS not configured"
+                }
+            )
+        
+        # Google Cloud Storage configuration
+        bucket_name = "demystifier-ai_cloudbuild"
+        
+        try:
+            # Initialize GCS client
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            
+            # List blobs in user's folder
+            user_prefix = f"documents/users/{current_user.id}/"
+            blobs = list(bucket.list_blobs(prefix=user_prefix))
+            
+            # Format file information
+            user_files = []
+            for blob in blobs:
+                # Skip directory markers
+                if blob.name.endswith('/'):
+                    continue
+                
+                # Extract filename from path
+                filename = blob.name.split('/')[-1]
+                original_filename = blob.metadata.get('original_filename', filename) if blob.metadata else filename
+                
+                # Generate signed URL (valid for 1 hour)
+                try:
+                    signed_url = blob.generate_signed_url(
+                        expiration=datetime.utcnow() + timedelta(hours=1),
+                        method='GET'
+                    )
+                except Exception as url_error:
+                    logger.warning(f"Failed to generate signed URL for {blob.name}: {url_error}")
+                    signed_url = None
+                
+                file_info = {
+                    "id": blob.name,
+                    "name": original_filename,
+                    "url": signed_url,
+                    "upload_date": blob.time_created.isoformat() if blob.time_created else None,
+                    "size": blob.size,
+                    "type": "pdf"
+                }
+                
+                user_files.append(file_info)
+            
+            # Sort by upload date (newest first)
+            user_files.sort(key=lambda x: x['upload_date'] or '', reverse=True)
+            
+            logger.info(f"Retrieved {len(user_files)} files for user {current_user.email}")
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "files": user_files,
+                    "total": len(user_files)
                 }
             )
             
-        except Exception as e:
-            logger.error(f"Error generating chat response: {str(e)}")
-            # Provide a helpful fallback response
-            fallback_response = f"I understand you're asking about: '{message}'. While I'm experiencing technical difficulties right now, I'd recommend consulting with a legal professional for specific advice about your document or situation."
-            
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "response": fallback_response,
-                    "model_used": "fallback"
-                }
+        except Exception as gcs_error:
+            logger.error(f"GCS list files error: {str(gcs_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve files from Google Cloud Storage: {str(gcs_error)}"
             )
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in chat_endpoint: {str(e)}")
+        logger.error(f"Unexpected error in get_user_files: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 

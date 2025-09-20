@@ -24,8 +24,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 24 * 60  # 24 hours
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Security scheme for FastAPI
-security = HTTPBearer()
+# Security scheme for FastAPI with required=False for optional auth
+security = HTTPBearer(auto_error=False)
 
 # In-memory user storage (in production, use a proper database)
 users_db: Dict[str, Dict[str, Any]] = {}

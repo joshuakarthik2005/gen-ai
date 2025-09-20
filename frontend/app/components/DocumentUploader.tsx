@@ -42,7 +42,7 @@ export default function DocumentUploader({ onUploadSuccess }: DocumentUploaderPr
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${BASE_URL}/upload-document`, {
+      const response = await fetch(`${BASE_URL}/upload-pdf`, {
         method: 'POST',
         body: formData,
       });
