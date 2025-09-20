@@ -55,6 +55,33 @@ interface ChatMessage {
 import { API_CONFIG, getApiUrl } from "../config/api";
 import { withAuthHeaders } from "../utils/auth";
 
+// Normalize any document URL to an absolute backend URL that the server can access.
+// - If we receive a local relative path like "/api/proxy-gcs/<bucket>/<path>",
+//   rewrite it to "<BACKEND_BASE>/proxy-gcs/<bucket>/<path>" so Cloud Run can fetch it.
+const toAbsoluteBackendUrl = (input: string): string => {
+  try {
+    const u = new URL(input, window.location.origin);
+    if (u.pathname.startsWith("/api/proxy-gcs/")) {
+      const rest = u.pathname.replace(/^\/api\/proxy-gcs\//, "");
+      return `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+    }
+    if (u.pathname.startsWith("/proxy-gcs/")) {
+      return `${API_CONFIG.BASE_URL}${u.pathname}`;
+    }
+    // Already absolute (external) or same-origin non-proxy path
+    return u.toString();
+  } catch {
+    if (input.startsWith("/api/proxy-gcs/")) {
+      const rest = input.replace(/^\/api\/proxy-gcs\//, "");
+      return `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+    }
+    if (input.startsWith("/proxy-gcs/")) {
+      return `${API_CONFIG.BASE_URL}${input}`;
+    }
+    return input;
+  }
+};
+
 const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: SynapsePanelProps) => {
   const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat">("snippets");
   const [chatMessage, setChatMessage] = useState("");
@@ -203,10 +230,12 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     try {
       console.log('Extracting document text from:', documentUrl);
       const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
+      // Ensure backend gets an absolute, publicly reachable URL
+      const absoluteUrl = toAbsoluteBackendUrl(documentUrl);
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ pdf_url: documentUrl }),
+        body: JSON.stringify({ url: absoluteUrl }),
       });
 
       if (!response.ok) {

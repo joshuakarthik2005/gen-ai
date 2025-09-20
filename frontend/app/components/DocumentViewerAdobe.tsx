@@ -8,13 +8,13 @@ import { withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 const ADOBE_API_KEY =
   (process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID as string) ||
-  "e3b008974ccc4ac5aacabe3252c01c67"; // Updated to match your original working key
+  "e3b008974ccc4ac5aacabe3252c01c67";
 
 interface DocumentViewerProps {
   documentUrl: string;
   filename: string;
   onExplainText: (text: string) => void;
-  onRagSearch: (query: string) => void;
+  onRagSearch?: (query: string) => void;
 }
 
 interface ExplainTooltipProps {
@@ -139,19 +139,55 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
 
   const handleExplainText = (text: string) => {
     onExplainText(text);
-    // Also trigger RAG search for related snippets
-    onRagSearch(text);
+    // Also kick off a RAG search for related snippets if callback provided
+    try {
+      if (typeof (onRagSearch) === 'function' && text && text.trim()) {
+        onRagSearch(text.trim());
+      }
+    } catch (e) {
+      // non-fatal
+      console.warn('onRagSearch callback failed:', e);
+    }
     closeTooltip();
   };
 
   const extractDocumentText = async () => {
     try {
-      console.log('Extracting document text from:', documentUrl);
-      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
+      // Normalize URL so backend can fetch it successfully
+      const toAbsoluteBackendUrl = (input: string): string => {
+        try {
+          const u = new URL(input, window.location.origin);
+          // If it's our frontend-relative proxy route, rewrite to backend absolute
+          if (u.pathname.startsWith('/api/proxy-gcs/')) {
+            const rest = u.pathname.replace(/^\/api\/proxy-gcs\//, '');
+            return `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+          }
+          // If it's a bare relative backend proxy path
+          if (u.pathname.startsWith('/proxy-gcs/')) {
+            const rest = u.pathname.replace(/^\/proxy-gcs\//, '');
+            return `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+          }
+          return u.toString();
+        } catch {
+          // Fallback best-effort
+          if (input.startsWith('/api/proxy-gcs/')) {
+            const rest = input.replace(/^\/api\/proxy-gcs\//, '');
+            return `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+          }
+          if (input.startsWith('/proxy-gcs/')) {
+            const rest = input.replace(/^\/proxy-gcs\//, '');
+            return `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+          }
+          return input;
+        }
+      };
+
+      const absoluteUrl = toAbsoluteBackendUrl(documentUrl);
+      console.log('Extracting document text from:', absoluteUrl);
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXTRACT_PDF_TEXT), {
         method: 'POST',
-        headers,
-        body: JSON.stringify({ url: documentUrl }),
+        headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ url: absoluteUrl }),
       });
 
       if (!response.ok) {
@@ -189,10 +225,11 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
 
     try {
       console.log('Sending request to chat API...');
-      const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.CHAT), {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           message: message.trim(),
           document_text: documentText,
@@ -308,21 +345,31 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
         // If the URL is cross-origin, route through our proxy to avoid CORS.
         let fetchUrl = documentUrl;
         let fetchHeaders: HeadersInit = {};
-        
         try {
           const u = new URL(documentUrl, window.location.origin);
-          const isCrossOrigin = u.origin !== window.location.origin;
-          if (isCrossOrigin) {
-            fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
-            // Include auth headers for the proxy request
+          // Rewrite local relative /api/proxy-gcs path to backend absolute for proxying
+          if (u.pathname.startsWith('/api/proxy-gcs/')) {
+            const rest = u.pathname.replace(/^\/api\/proxy-gcs\//, '');
+            const backendUrl = `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+            fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(backendUrl)}`;
             fetchHeaders = await withAuthHeaders({});
+          } else if (u.pathname.startsWith('/proxy-gcs/')) {
+            // Also handle bare relative /proxy-gcs paths
+            const rest = u.pathname.replace(/^\/proxy-gcs\//, '');
+            const backendUrl = `${API_CONFIG.BASE_URL}/proxy-gcs/${rest}`;
+            fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(backendUrl)}`;
+            fetchHeaders = await withAuthHeaders({});
+          } else {
+            const isCrossOrigin = u.origin !== window.location.origin;
+            if (isCrossOrigin) {
+              fetchUrl = `/api/proxy-pdf?url=${encodeURIComponent(u.toString())}`;
+              fetchHeaders = await withAuthHeaders({});
+            }
           }
         } catch {
           // If it isn't a valid absolute/relative URL, try as-is
-          // But still include auth headers in case it's a relative backend URL
           fetchHeaders = await withAuthHeaders({});
         }
-        
         const res = await fetch(fetchUrl, { headers: fetchHeaders });
         if (!res.ok) throw new Error(`Failed to fetch PDF: ${res.status}`);
         return await res.arrayBuffer();
@@ -418,9 +465,11 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
       adobeDCView.registerCallback(
         window.AdobeDC.View.Enum.CallbackType.EVENT_LISTENER,
         function(event: any) {
-          console.log("Adobe PDF Event:", event.type, event.data);
-          
-          if (event.type === 'PREVIEW_SELECTION_END' && event.data?.selections) {
+          try {
+            console.log("Adobe PDF Event:", event?.type, event?.data);
+            if (!event || !event.type) return;
+            
+            if (event.type === 'PREVIEW_SELECTION_END' && event.data?.selections) {
             // Text has been selected
             const selection = window.getSelection();
             if (selection && selection.toString().trim()) {
@@ -433,7 +482,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
                 y: rect.top + window.scrollY
               });
             }
-          } else if (event.type === 'PREVIEW_PAGE_CLICK' || event.type === 'PREVIEW_DOCUMENT_CLICK') {
+            } else if (event.type === 'PREVIEW_PAGE_CLICK' || event.type === 'PREVIEW_DOCUMENT_CLICK') {
             // Clear selection when clicking elsewhere
             setTimeout(() => {
               const selection = window.getSelection();
@@ -442,6 +491,10 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
                 setSelectedText("");
               }
             }, 100);
+            }
+          } catch (eh) {
+            // Guard against SDK edge cases
+            console.warn('Adobe event handler error:', eh);
           }
         },
         eventOptions
