@@ -8,7 +8,7 @@ import os
 import logging
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -293,6 +293,96 @@ def _sanitize_rag_query(query: str) -> str:
         return query
 
 
+def _is_placeholder_title(title: Optional[str]) -> bool:
+    """Return True if the provided title is a non-informative placeholder.
+
+    Examples include '(anonymous)', 'untitled', 'no title', etc. Comparison is case-insensitive.
+    """
+    if not title:
+        return True
+    t = str(title).strip().lower()
+    if not t:
+        return True
+    placeholders = {"(anonymous)", "untitled", "no title", "untitled document", "document"}
+    if t in placeholders:
+        return True
+    # Many systems prefix with 'untitled' or similar
+    if t.startswith("untitled"):
+        return True
+    return False
+
+
+def _derive_doc_name_and_url(doc: Any) -> Tuple[str, str]:
+    """Best-effort extraction of a human-friendly document name and a URL/ID.
+
+    Preference order for name: struct_data.title/name (if not placeholder) ->
+    derived_struct_data.title (if not placeholder) -> uri filename ->
+    tail of resource name -> id -> 'Unknown Document'.
+
+    URL preference: uri -> id -> name.
+    """
+    document_name = None
+    document_url = ""
+
+    try:
+        # Prefer struct_data title/name
+        if hasattr(doc, 'struct_data') and getattr(doc, 'struct_data'):
+            sd = getattr(doc, 'struct_data')
+            candidate = sd.get('title') or sd.get('name')
+            if not _is_placeholder_title(candidate):
+                document_name = candidate
+
+        # Try derived_struct_data title
+        if not document_name and hasattr(doc, 'derived_struct_data') and getattr(doc, 'derived_struct_data'):
+            dsd = getattr(doc, 'derived_struct_data')
+            candidate = dsd.get('title')
+            if not _is_placeholder_title(candidate):
+                document_name = candidate
+
+        # URL (prefer uri)
+        if hasattr(doc, 'uri') and getattr(doc, 'uri'):
+            document_url = getattr(doc, 'uri')
+
+        # Fallback to uri filename for name
+        if not document_name and document_url:
+            try:
+                from urllib.parse import urlparse
+                import os as _os
+                parsed = urlparse(document_url)
+                fname = _os.path.basename(parsed.path)
+                if fname:
+                    document_name = fname
+            except Exception:
+                pass
+
+        # Fallback to resource name tail
+        if not document_name and hasattr(doc, 'name') and getattr(doc, 'name'):
+            try:
+                name_tail = str(getattr(doc, 'name')).split('/')[-1]
+                if name_tail:
+                    document_name = name_tail
+            except Exception:
+                pass
+
+        # Fallback to id
+        if not document_name and hasattr(doc, 'id') and getattr(doc, 'id'):
+            document_name = str(getattr(doc, 'id'))
+            if not document_url:
+                document_url = document_name
+
+        # If URL still empty, use id or name as last resort
+        if not document_url:
+            if hasattr(doc, 'id') and getattr(doc, 'id'):
+                document_url = str(getattr(doc, 'id'))
+            elif hasattr(doc, 'name') and getattr(doc, 'name'):
+                document_url = str(getattr(doc, 'name'))
+
+    except Exception:
+        pass
+
+    return (document_name or "Unknown Document", document_url)
+
+
 def _get_fallback_snippets(query: str) -> List[Dict[str, Any]]:
     """Return sample landlord/tenant snippets when Discovery Engine has no indexed documents.
 
@@ -439,7 +529,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
             if safe_val:
                 metadata_filter = f'{filter_field}:"{safe_val}"'
 
-        # Perform the search (try multiple serving configs if needed)
+    # Perform the search (try multiple serving configs if needed)
         response = None
         last_error = None
         for sc in serving_configs_to_try:
@@ -474,8 +564,61 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                 last_error = e_try
                 logger.warning(f"Discovery Engine search failed with serving config {sc}: {e_try}")
                 continue
+        # If engine paths failed, optionally try auto-discovered dataStores (common for Search Apps)
+        if response is None:
+            try:
+                from google.cloud import discoveryengine as _de
+                ds_client = _de.DataStoreServiceClient()
+                parent = f"projects/{project_id}/locations/{location}/collections/default_collection"
+                data_stores = list(ds_client.list_data_stores(parent=parent))
+                for ds in data_stores:
+                    # ds.name like projects/.../dataStores/{id}
+                    ds_id = ds.name.split("/")[-1]
+                    ds_serving_base = f"{parent}/dataStores/{ds_id}/servingConfigs"
+                    candidates = [
+                        f"{ds_serving_base}/{serving_config_name}"
+                    ]
+                    if not env_explicit and serving_config_name != "default_search":
+                        candidates.append(f"{ds_serving_base}/default_search")
+                    for sc in candidates:
+                        try:
+                            request = discoveryengine.SearchRequest(
+                                serving_config=sc,
+                                query=sanitized_query,
+                                page_size=20,
+                                safe_search=False,
+                                filter=metadata_filter or None,
+                                query_expansion_spec=discoveryengine.SearchRequest.QueryExpansionSpec(
+                                    condition=discoveryengine.SearchRequest.QueryExpansionSpec.Condition.AUTO
+                                ),
+                                spell_correction_spec=discoveryengine.SearchRequest.SpellCorrectionSpec(
+                                    mode=discoveryengine.SearchRequest.SpellCorrectionSpec.Mode.AUTO
+                                ),
+                                content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+                                    snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
+                                        return_snippet=True,
+                                        max_snippet_count=5
+                                    ),
+                                    extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
+                                        max_extractive_answer_count=2,
+                                        max_extractive_segment_count=5
+                                    )
+                                )
+                            )
+                            response = client.search(request=request)
+                            serving_config_used = sc
+                            break
+                        except Exception as e_try2:
+                            last_error = e_try2
+                            logger.warning(f"Discovery Engine search failed with dataStore serving config {sc}: {e_try2}")
+                            continue
+                    if response is not None:
+                        break
+            except Exception as e_list:
+                logger.warning(f"Auto-discovery of dataStores failed or not available: {e_list}")
         if response is None and last_error is not None:
-            # As a fallback, call the REST API using the direct engine path (engines/*:search)
+            # As a fallback, call the REST API using the direct engine path (engines/*:search),
+            # then try dataStore servingConfig REST search as well.
             try:
                 import json as _json
                 from google.auth import default as _google_auth_default
@@ -508,9 +651,15 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                 class _RestDoc:
                     def __init__(self, d):
                         self._d = d
-                        self.struct_data = d.get("document", {}).get("structData") or {}
-                        self.derived_struct_data = d.get("document", {}).get("derivedStructData") or {}
-                        self.id = d.get("document", {}).get("id", "")
+                        doc = d.get("document", {})
+                        # Expose fields similar to gRPC response
+                        self.struct_data = doc.get("structData") or {}
+                        self.derived_struct_data = doc.get("derivedStructData") or {}
+                        self.id = doc.get("id", "")
+                        self.name = doc.get("name", "")
+                        self.uri = doc.get("uri", "")
+                        # Provide a 'document' alias to keep downstream hasattr(result.document, ...) working
+                        self.document = self
 
                 class _RestResponse:
                     def __init__(self, items):
@@ -518,6 +667,33 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
 
                 response = _RestResponse([_RestDoc(r) for r in rest_json.get("results", [])])
                 serving_config_used = engine_resource_name + ":search"
+
+                # If engine REST returned no results, try dataStore REST search using discovered dataStores
+                if not response.results:
+                    try:
+                        from google.cloud import discoveryengine as _de2
+                        ds_client2 = _de2.DataStoreServiceClient()
+                        parent2 = f"projects/{project_id}/locations/{location}/collections/default_collection"
+                        data_stores2 = list(ds_client2.list_data_stores(parent=parent2))
+                        for ds in data_stores2:
+                            ds_id = ds.name.split("/")[-1]
+                            sc_name = serving_config_name if env_explicit else "default_search"
+                            ds_rest_url = (
+                                f"https://discoveryengine.googleapis.com/v1alpha/"
+                                f"{parent2}/dataStores/{ds_id}/servingConfigs/{sc_name}:search"
+                            )
+                            ds_resp = authed.post(ds_rest_url, json=body, timeout=30)
+                            if ds_resp.status_code >= 400:
+                                logger.warning(f"REST dataStore search failed {ds_resp.status_code}: {ds_resp.text[:160]}")
+                                continue
+                            ds_json = ds_resp.json()
+                            items = [_RestDoc(r) for r in ds_json.get("results", [])]
+                            if items:
+                                response = _RestResponse(items)
+                                serving_config_used = f"{parent2}/dataStores/{ds_id}/servingConfigs/{sc_name}:search"
+                                break
+                    except Exception as _rest_ds_err:
+                        logger.warning(f"REST dataStore search attempt failed: {_rest_ds_err}")
             except Exception as rest_err:
                 # If REST fallback also failed, raise original error
                 logger.warning(f"REST engines:search fallback failed: {rest_err}")
@@ -526,15 +702,8 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
         # Process the results
         related_snippets = []
         for result in response.results:
-            # Extract document info
-            document_name = "Unknown Document"
-            if hasattr(result.document, 'struct_data') and result.document.struct_data:
-                # Try to get document name from metadata
-                struct_data = result.document.struct_data
-                if 'title' in struct_data:
-                    document_name = struct_data['title']
-                elif 'name' in struct_data:
-                    document_name = struct_data['name']
+            # Extract document info using helper (handles placeholders)
+            document_name, document_url = _derive_doc_name_and_url(result.document)
             
             # Extract snippets
             snippets = []
@@ -568,7 +737,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                     "text": snippet,
                     "source": document_name,
                     "relevance_score": 0.8,  # You might want to extract actual scores
-                    "document_url": result.document.id if hasattr(result.document, 'id') else ""
+                    "document_url": document_url
                 })
         
         # If nothing found, try a lightweight typo-correction fallback (e.g., "lanlord" -> "landlord")
@@ -612,10 +781,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                     )
                     response2 = client.search(request=request_corrected)
                     for result in response2.results:
-                        document_name = "Unknown Document"
-                        if hasattr(result.document, 'struct_data') and result.document.struct_data:
-                            sd = result.document.struct_data
-                            document_name = sd.get('title') or sd.get('name') or document_name
+                        document_name, document_url = _derive_doc_name_and_url(result.document)
                         snippets2 = []
                         if hasattr(result.document, 'derived_struct_data') and result.document.derived_struct_data:
                             dd = result.document.derived_struct_data
@@ -642,7 +808,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                                 "text": sn,
                                 "source": document_name,
                                 "relevance_score": 0.8,
-                                "document_url": result.document.id if hasattr(result.document, 'id') else ""
+                                "document_url": document_url
                             })
 
                 # Last fallback: if we corrected and still empty, try searching only the corrected term tokens that changed
@@ -674,10 +840,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                         )
                         resp3 = client.search(request=req3)
                         for result in resp3.results:
-                            name3 = "Unknown Document"
-                            if hasattr(result.document, 'struct_data') and result.document.struct_data:
-                                sd = result.document.struct_data
-                                name3 = sd.get('title') or sd.get('name') or name3
+                            name3, url3 = _derive_doc_name_and_url(result.document)
                             if hasattr(result.document, 'derived_struct_data') and result.document.derived_struct_data:
                                 dd = result.document.derived_struct_data
                                 if 'snippets' in dd:
@@ -687,7 +850,7 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                                                 "text": sn['snippet'],
                                                 "source": name3,
                                                 "relevance_score": 0.7,
-                                                "document_url": result.document.id if hasattr(result.document, 'id') else ""
+                                                "document_url": url3
                                             })
             except Exception as _e:
                 logger.warning(f"Typo-correction fallback search failed: {_e}")
@@ -1584,6 +1747,7 @@ async def rag_health():
                     test_details = []
                     any_success = False
                     any_results = False
+                    # Try configured and common serving configs against engine path
                     for sc in configs_to_try:
                         try:
                             test_request = _de.SearchRequest(
@@ -1608,6 +1772,81 @@ async def rag_health():
                                 "has_documents": False,
                                 "error": str(e_try)
                             })
+
+                    # Try listing dataStores and test their serving configs
+                    try:
+                        ds_client = _de.DataStoreServiceClient()
+                        parent = f"projects/{project_id}/locations/{location}/collections/default_collection"
+                        for ds in ds_client.list_data_stores(parent=parent):
+                            ds_id = ds.name.split("/")[-1]
+                            for sc_name in [serving_config_name, "default_search"]:
+                                sc = f"{parent}/dataStores/{ds_id}/servingConfigs/{sc_name}"
+                                try:
+                                    test_request = _de.SearchRequest(
+                                        serving_config=sc,
+                                        query="landlord",
+                                        page_size=1
+                                    )
+                                    test_response = client.search(request=test_request)
+                                    result_count = len(list(test_response.results))
+                                    any_success = True
+                                    any_results = any_results or (result_count > 0)
+                                    test_details.append({
+                                        "serving_config": sc,
+                                        "results_found": result_count,
+                                        "has_documents": result_count > 0,
+                                        "error": None
+                                    })
+                                except Exception as e_try2:
+                                    test_details.append({
+                                        "serving_config": sc,
+                                        "results_found": 0,
+                                        "has_documents": False,
+                                        "error": str(e_try2)
+                                    })
+                    except Exception as e_list:
+                        test_details.append({
+                            "serving_config": "list_data_stores",
+                            "results_found": 0,
+                            "has_documents": False,
+                            "error": str(e_list)
+                        })
+
+                    # Try REST engines:*:search once for sanity
+                    try:
+                        from google.auth import default as _ga_default
+                        from google.auth.transport.requests import AuthorizedSession as _AuthSess
+                        creds, _ = _ga_default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+                        sess = _AuthSess(creds)
+                        engine_resource_name = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}"
+                        url = f"https://discoveryengine.googleapis.com/v1alpha/{engine_resource_name}:search"
+                        body = {"query": "landlord", "pageSize": 1}
+                        resp = sess.post(url, json=body, timeout=20)
+                        if resp.status_code < 400:
+                            rj = resp.json()
+                            rc = len(rj.get("results", []))
+                            any_success = any_success or True
+                            any_results = any_results or (rc > 0)
+                            test_details.append({
+                                "serving_config": engine_resource_name + ":search",
+                                "results_found": rc,
+                                "has_documents": rc > 0,
+                                "error": None
+                            })
+                        else:
+                            test_details.append({
+                                "serving_config": engine_resource_name + ":search",
+                                "results_found": 0,
+                                "has_documents": False,
+                                "error": f"{resp.status_code} {resp.text[:160]}"
+                            })
+                    except Exception as e_rest:
+                        test_details.append({
+                            "serving_config": "engines_rest",
+                            "results_found": 0,
+                            "has_documents": False,
+                            "error": str(e_rest)
+                        })
                     status["test_search"] = {
                         "query": "landlord",
                         "attempts": test_details,
