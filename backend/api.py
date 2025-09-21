@@ -871,30 +871,32 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
             "success": True,
             "related_snippets": related_snippets,
             "total_results": len(related_snippets),
-            "search_query": sanitized_query
+            "search_query": sanitized_query,
+            "note": ""
         }
-        
+
     except Exception as e:
-        logger.error(f"Error searching related documents: {str(e)}")
-        # Enable fallback mode for testing when Discovery Engine errors
+        # Catch-all for any unexpected Discovery Engine errors
+        logger.error(f"Discovery Engine search failed: {e}")
         if enable_fallback:
-            fallback_snippets = _get_fallback_snippets(sanitized_query)
-            if fallback_snippets:
-                logger.info(f"Using fallback snippets for query: {sanitized_query}")
-                return {
-                    "success": True,
-                    "related_snippets": fallback_snippets,
-                    "total_results": len(fallback_snippets),
-                    "search_query": sanitized_query,
-                    "note": "Using sample snippets (fallback mode)"
-                }
-        
+            try:
+                fallback_snippets = _get_fallback_snippets(sanitized_query)
+                if fallback_snippets:
+                    return {
+                        "success": True,
+                        "related_snippets": fallback_snippets,
+                        "total_results": len(fallback_snippets),
+                        "search_query": sanitized_query,
+                        "note": "Using sample snippets (fallback mode)"
+                    }
+            except Exception:
+                pass
         return {
             "success": True,
             "related_snippets": [],
             "total_results": 0,
             "search_query": sanitized_query,
-            "note": "Search failed"
+            "note": "Search error"
         }
 
 
@@ -1051,6 +1053,96 @@ async def health_check():
         "vertex_ai_initialized": vertex_ai_initialized,
         "timestamp": "2025-09-16"
     }
+
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest, current_user: User = Depends(require_auth)):
+    """Chat with AI about a document or legal topic (requires authentication).
+
+    Request body:
+    - message: user question or prompt
+    - document_text: optional source text to ground the answer
+    """
+    try:
+        user_message = (request.message or "").strip()
+        document_text = (request.document_text or "").strip()
+
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+        # Keep context sizes reasonable
+        if len(document_text) > 12000:
+            document_text = document_text[:12000]
+
+        # Ensure Vertex AI is ready
+        global vertex_ai_initialized, model
+        if not vertex_ai_initialized:
+            initialize_vertex_ai()
+
+        def _build_prompt(msg: str, doc: str) -> str:
+            header = (
+                "You are a helpful legal assistant. Answer in clear, plain English, "
+                "avoid legalese, and use concise Markdown formatting."
+            )
+            if doc:
+                return (
+                    f"{header}\n\n"
+                    "Ground your response strictly in the provided document text when possible. "
+                    "If something is not present in the document, say so explicitly.\n\n"
+                    "User question:\n" + msg + "\n\n"
+                    "Document text (may be truncated):\n" + doc
+                )
+            else:
+                return (
+                    f"{header}\n\n"
+                    "No document text was provided. Answer generally and note any assumptions.\n\n"
+                    "User question:\n" + msg
+                )
+
+        prompt = _build_prompt(user_message, document_text)
+
+        # Try model response if available
+        if VERTEX_AI_AVAILABLE and model is not None:
+            try:
+                resp = model.generate_content(prompt)
+                text = getattr(resp, "text", None) or ""
+                if not text:
+                    text = "I couldn't generate a response right now. Please try again."
+                return {
+                    "response": text,
+                    "model_used": "gemini-1.5-pro",
+                    "grounded": bool(document_text),
+                }
+            except Exception as gen_err:
+                logger.warning(f"Gemini generate_content failed: {gen_err}")
+                # Fall through to graceful fallback
+
+        # Graceful fallback when model not available
+        fallback = (
+            "I'm currently unable to access the AI model. "
+            "Here is a suggested approach: 1) Identify the clause or section relevant to your question, "
+            "2) Summarize obligations and deadlines, 3) Note any risks or penalties, 4) If unsure, seek legal advice."
+        )
+        if document_text:
+            fallback = (
+                "Based on the provided document text, here are general tips to interpret it:\n\n"
+                "- Look for headings like 'Obligations', 'Term', 'Termination', 'Liability', 'Confidentiality'.\n"
+                "- Identify what you must do vs. what the other party must do.\n"
+                "- Check for deadlines, renewal terms, and penalties.\n"
+                "- When the AI model becomes available, you'll receive a tailored answer."
+            )
+
+        return {
+            "response": fallback,
+            "model_used": "unavailable",
+            "grounded": bool(document_text),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in chat_endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
 @app.post("/analyze-document")
@@ -2025,7 +2117,7 @@ async def get_user_files(current_user: User = Depends(require_auth)):
             # List blobs in user's folder
             user_prefix = f"documents/users/{current_user.id}/"
             blobs = list(bucket.list_blobs(prefix=user_prefix))
-
+    
             user_files = []
             for blob in blobs:
                 # Skip directory markers
@@ -2058,7 +2150,7 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                 }
                 
                 user_files.append(file_info)
-
+    
             # Backward-compat: if none found (due to older user IDs), optionally scan all docs and filter by user email
             if not user_files and not strict_isolation:
                 try:
@@ -2102,7 +2194,6 @@ async def get_user_files(current_user: User = Depends(require_auth)):
                     "total": len(user_files)
                 }
             )
-            
         except Exception as gcs_error:
             logger.error(f"GCS list files error: {str(gcs_error)}")
             raise HTTPException(
