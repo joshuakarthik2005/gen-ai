@@ -106,6 +106,15 @@ class RAGSearchResponse(BaseModel):
     search_query: str
     total_results: int
 
+class RAGTestRequest(BaseModel):
+    queries: Optional[List[str]] = None
+    disable_fallback: Optional[bool] = False
+
+# Custom test request for targeted validation
+class RAGTestCustomRequest(BaseModel):
+    queries: List[str]
+    disable_fallback: bool = True
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Legal Document Demystifier",
@@ -344,7 +353,7 @@ def _get_fallback_snippets(query: str) -> List[Dict[str, Any]]:
     return []
 
 
-def search_related_documents(query: str, *, current_user: Optional[User] = None, document_context: str = "") -> Dict[str, Any]:
+def search_related_documents(query: str, *, current_user: Optional[User] = None, document_context: str = "", disable_fallback: bool = False) -> Dict[str, Any]:
     """Search for related document snippets using Vertex AI Search.
 
     Returns empty results if Discovery Engine is unavailable or an error occurs (no mock data by default).
@@ -353,6 +362,9 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
     """
     allow_mock = os.getenv("RAG_ALLOW_MOCK", "false").lower() == "true"
     enable_fallback = os.getenv("RAG_ENABLE_FALLBACK", "true").lower() == "true"
+    # Allow callers (e.g., test endpoints) to disable fallback even if env enables it
+    if disable_fallback:
+        enable_fallback = False
 
     # Sanitize incoming query
     sanitized_query = _sanitize_rag_query(query or "")
@@ -393,19 +405,23 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
         # Try multiple possible API path formats to find the correct one
         serving_configs_to_try = []
         
-        # Format 1: Standard engine path
+        # Format 1: Direct engine path (no servingConfigs - as shown in API documentation)
+        direct_engine = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}"
+        serving_configs_to_try.append(direct_engine)
+        
+        # Format 2: Standard engine path with servingConfigs
         base1 = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}/servingConfigs"
         serving_configs_to_try.append(f"{base1}/{serving_config_name}")
         if not env_explicit and serving_config_name != "default_search":
             serving_configs_to_try.append(f"{base1}/default_search")
         
-        # Format 2: Data store path (for data store APIs)
+        # Format 3: Data store path (for data store APIs)
         base2 = f"projects/{project_id}/locations/{location}/dataStores/{engine_id}/servingConfigs"  
         serving_configs_to_try.append(f"{base2}/{serving_config_name}")
         if not env_explicit and serving_config_name != "default_search":
             serving_configs_to_try.append(f"{base2}/default_search")
             
-        # Format 3: App path (for search apps)
+        # Format 4: App path (for search apps)
         base3 = f"projects/{project_id}/locations/{location}/collections/default_collection/dataStores/{engine_id}/servingConfigs"
         serving_configs_to_try.append(f"{base3}/{serving_config_name}")
         if not env_explicit and serving_config_name != "default_search":
@@ -459,8 +475,53 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                 logger.warning(f"Discovery Engine search failed with serving config {sc}: {e_try}")
                 continue
         if response is None and last_error is not None:
-            # If we couldn't query with any serving config, raise to outer handler
-            raise last_error
+            # As a fallback, call the REST API using the direct engine path (engines/*:search)
+            try:
+                import json as _json
+                from google.auth import default as _google_auth_default
+                from google.auth.transport.requests import AuthorizedSession as _AuthorizedSession
+
+                engine_resource_name = f"projects/{project_id}/locations/{location}/collections/default_collection/engines/{engine_id}"
+                url = f"https://discoveryengine.googleapis.com/v1alpha/{engine_resource_name}:search"
+
+                body = {
+                    "query": sanitized_query,
+                    "pageSize": 20,
+                    "queryExpansionSpec": {"condition": "AUTO"},
+                    "spellCorrectionSpec": {"mode": "AUTO"},
+                    "contentSearchSpec": {
+                        "snippetSpec": {"returnSnippet": True, "maxSnippetCount": 5},
+                        "extractiveContentSpec": {"maxExtractiveAnswerCount": 2, "maxExtractiveSegmentCount": 5}
+                    }
+                }
+                if metadata_filter:
+                    body["filter"] = metadata_filter
+
+                creds, _ = _google_auth_default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+                authed = _AuthorizedSession(creds)
+                rest_resp = authed.post(url, json=body, timeout=30)
+                if rest_resp.status_code >= 400:
+                    raise RuntimeError(f"REST engines:search failed {rest_resp.status_code}: {rest_resp.text[:200]}")
+                rest_json = rest_resp.json()
+
+                # Create a lightweight object to unify with the gRPC response parsing below
+                class _RestDoc:
+                    def __init__(self, d):
+                        self._d = d
+                        self.struct_data = d.get("document", {}).get("structData") or {}
+                        self.derived_struct_data = d.get("document", {}).get("derivedStructData") or {}
+                        self.id = d.get("document", {}).get("id", "")
+
+                class _RestResponse:
+                    def __init__(self, items):
+                        self.results = items
+
+                response = _RestResponse([_RestDoc(r) for r in rest_json.get("results", [])])
+                serving_config_used = engine_resource_name + ":search"
+            except Exception as rest_err:
+                # If REST fallback also failed, raise original error
+                logger.warning(f"REST engines:search fallback failed: {rest_err}")
+                raise last_error
         
         # Process the results
         related_snippets = []
@@ -1419,6 +1480,58 @@ async def rag_test_endpoint(current_user: User = Depends(optional_auth)):
             }
         })
 
+
+@app.post("/rag-test-custom")
+async def rag_test_custom_endpoint(request: RAGTestRequest, current_user: User = Depends(optional_auth)):
+    """Run custom queries against RAG, optionally disabling fallback to verify real engine behavior.
+
+    Body:
+    - queries: list of strings to search
+    - disable_fallback: if true, do not use hardcoded fallback snippets
+    """
+    try:
+        queries = request.queries or [
+            "arbitration clause",
+            "severability",
+            "non-compete",
+            "confidentiality",
+            "probation period"
+        ]
+        results = {}
+
+        for q in queries:
+            sr = search_related_documents(q, current_user=current_user, disable_fallback=bool(request.disable_fallback))
+            results[q] = {
+                "total_results": sr.get("total_results", 0),
+                "snippets_preview": [
+                    {
+                        "text": s["text"][:120] + ("..." if len(s["text"]) > 120 else ""),
+                        "source": s.get("source", "")
+                    }
+                    for s in sr.get("related_snippets", [])[:3]
+                ],
+                "used_fallback": "note" in sr and "fallback" in str(sr.get("note", "")).lower()
+            }
+
+        any_results = any(r["total_results"] > 0 for r in results.values())
+        return JSONResponse(status_code=200, content={
+            "test_results": results,
+            "summary": {
+                "total_queries": len(queries),
+                "queries_with_results": sum(1 for r in results.values() if r["total_results"] > 0),
+                "documents_seem_indexed": any_results
+            }
+        })
+    except Exception as e:
+        logger.error(f"RAG custom test error: {str(e)}")
+        return JSONResponse(status_code=200, content={
+            "error": str(e),
+            "test_results": {},
+            "summary": {
+                "documents_seem_indexed": False,
+                "error_occurred": True
+            }
+        })
 
 @app.get("/rag-health")
 async def rag_health():
