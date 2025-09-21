@@ -510,24 +510,47 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
 
   // Handle explained text from document viewer
   useEffect(() => {
-    if (explainedText && explainedText.trim() !== "") {
+    const run = async () => {
+      if (!explainedText || explainedText.trim() === "") return;
       setIsAnalyzing(true);
-      
-      // Simulate AI analysis
-      setTimeout(() => {
+      try {
+        const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
+        const resp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXPLAIN_SELECTION), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ selected_text: explainedText, document_url: documentUrl })
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          throw new Error(errText || `Explain-selection failed (${resp.status})`);
+        }
+        const data = await resp.json();
+        const explanation = data?.explanation || 'No explanation returned.';
         const newAnalysis: Analysis = {
           id: Date.now().toString(),
           text: explainedText,
-          explanation: `This clause establishes specific terms and conditions. The selected text "${explainedText.substring(0, 50)}..." contains important legal implications regarding obligations and responsibilities.`,
+          explanation,
           timestamp: new Date().toLocaleTimeString(),
-          type: "explanation"
+          type: 'explanation'
         };
-        
         setAnalyses(prev => [newAnalysis, ...prev]);
+        setActiveTab('analysis');
+      } catch (e) {
+        console.error('Explain-selection error:', e);
+        const fallback: Analysis = {
+          id: Date.now().toString(),
+          text: explainedText,
+          explanation: `I couldn't reach the explanation service. Here's a quick note: This clause may define obligations, timelines, or risks. If this keeps happening, check your API URL and auth.`,
+          timestamp: new Date().toLocaleTimeString(),
+          type: 'warning'
+        };
+        setAnalyses(prev => [fallback, ...prev]);
+        setActiveTab('analysis');
+      } finally {
         setIsAnalyzing(false);
-        setActiveTab("analysis");
-      }, 1500);
-    }
+      }
+    };
+    run();
   }, [explainedText]);
 
   const getTypeIcon = (type: string) => {
