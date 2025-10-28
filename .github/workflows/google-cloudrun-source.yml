@@ -106,6 +106,7 @@ jobs:
             --memory 1Gi \
             --max-instances 10 \
             --timeout 900 \
+            --clear-base-image \
             --set-env-vars NEXT_PUBLIC_API_URL=${{ steps.get-backend-url.outputs.BACKEND_URL }},NODE_ENV=production
 
       - name: 'Get Frontend URL'
