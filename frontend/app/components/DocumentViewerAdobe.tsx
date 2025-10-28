@@ -7,9 +7,16 @@ import { API_CONFIG, getApiUrl } from "../config/api";
 import { withAuthHeaders } from "../utils/auth";
 
 // Adobe PDF Embed API Configuration
-// Intentionally hardcoded per request to ensure only this key is used.
-// Do not change to read from env without approval.
-const ADOBE_API_KEY = "92fd30ffc8ed4c74a35e3da2caeb69ce";
+// Now uses environment variable to support multiple environments/machines
+// Set NEXT_PUBLIC_ADOBE_CLIENT_ID in .env.local
+const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "42dca80537eb431cad94af71101d769d";
+
+// Debug logging for troubleshooting (will show in browser console)
+if (typeof window !== 'undefined') {
+  console.log('🔑 Adobe PDF Embed - Using Client ID:', ADOBE_API_KEY);
+  console.log('🌐 Current Origin:', window.location.origin);
+  console.log('💡 Make sure this origin is added to Adobe Console allowed domains');
+}
 
 interface DocumentViewerProps {
   documentUrl: string;
@@ -498,7 +505,17 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
       
     } catch (err) {
       console.error("Adobe PDF initialization error:", err);
-      setError("Failed to initialize PDF viewer");
+      const errorMsg = err instanceof Error ? err.message : "Failed to initialize PDF viewer";
+      
+      // Provide helpful error message for common domain authorization issue
+      if (errorMsg.includes('not authorized') || errorMsg.includes('domain')) {
+        setError(
+          `Domain Authorization Error: The current origin (${window.location.origin}) is not authorized for this Adobe Client ID. ` +
+          `Please add this origin to the Adobe PDF Embed API Console under "Allowed Domains".`
+        );
+      } else {
+        setError(errorMsg);
+      }
       setIsLoading(false);
     }
   };

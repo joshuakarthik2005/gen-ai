@@ -100,6 +100,8 @@ class ExtractRequest(BaseModel):
 class RAGSearchRequest(BaseModel):
     query: str
     document_context: str = ""
+    document_id: Optional[str] = None  # For filtering to specific document
+    scope: Optional[str] = "user"  # "user" (all user docs) or "document" (current doc only)
 
 class RAGSearchResponse(BaseModel):
     related_snippets: List[Dict[str, Any]]
@@ -443,12 +445,31 @@ def _get_fallback_snippets(query: str) -> List[Dict[str, Any]]:
     return []
 
 
-def search_related_documents(query: str, *, current_user: Optional[User] = None, document_context: str = "", disable_fallback: bool = False) -> Dict[str, Any]:
+def search_related_documents(
+    query: str, 
+    *, 
+    current_user: Optional[User] = None, 
+    document_context: str = "", 
+    document_id: Optional[str] = None,
+    scope: str = "user",
+    disable_fallback: bool = False
+) -> Dict[str, Any]:
     """Search for related document snippets using Vertex AI Search.
 
     Returns empty results if Discovery Engine is unavailable or an error occurs (no mock data by default).
     Configure engine via env: RAG_ENGINE_PROJECT, RAG_ENGINE_LOCATION, RAG_ENGINE_ID.
     Optionally filter by user metadata if your index has a `user_id` field and you set RAG_FILTER_METADATA=user_id.
+    
+    Args:
+        query: Search query text
+        current_user: Current authenticated user (for filtering)
+        document_context: Document URL or context (optional)
+        document_id: Specific document ID to search within (optional)
+        scope: Search scope - "user" (all user docs) or "document" (current doc only)
+        disable_fallback: If True, disable fallback sample snippets
+    
+    Returns:
+        Dict with success, related_snippets, total_results, etc.
     """
     allow_mock = os.getenv("RAG_ALLOW_MOCK", "false").lower() == "true"
     enable_fallback = os.getenv("RAG_ENABLE_FALLBACK", "true").lower() == "true"
@@ -519,15 +540,45 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
             
         serving_config_used = None
         
-        # Create the search request
-        # Optional metadata filter by user_id if configured and available in your engine
+        # Build filter expression based on scope and user context
+        # IMPORTANT: This is backward compatible - if schema doesn't have these fields, 
+        # Discovery Engine will ignore the filter gracefully
         metadata_filter = None
-        filter_field = os.getenv("RAG_FILTER_METADATA", "")
-        if filter_field and current_user:
-            # Example: user_id:"<uuid>"
-            safe_val = getattr(current_user, "id", None) or getattr(current_user, "email", None)
-            if safe_val:
-                metadata_filter = f'{filter_field}:"{safe_val}"'
+        
+        try:
+            filter_parts = []
+            
+            # Get configured filter field (user_id, user_email, etc.)
+            user_filter_field = os.getenv("RAG_FILTER_METADATA", "")
+            doc_filter_field = os.getenv("RAG_FILTER_DOCUMENT_ID", "document_id")
+            
+            # Apply document-level filtering if scope is "document" and document_id provided
+            if scope == "document" and document_id:
+                # Filter to specific document
+                safe_doc_id = str(document_id).replace('"', '\\"')
+                filter_parts.append(f'{doc_filter_field}: ANY("{safe_doc_id}")')
+                logger.info(f"RAG search scoped to document: {safe_doc_id}")
+            
+            # Apply user-level filtering if user is authenticated
+            elif current_user and user_filter_field:
+                # Filter to user's documents
+                safe_val = getattr(current_user, "id", None) or getattr(current_user, "email", None)
+                if safe_val:
+                    safe_val = str(safe_val).replace('"', '\\"')
+                    filter_parts.append(f'{user_filter_field}: ANY("{safe_val}")')
+                    logger.info(f"RAG search filtered to user: {current_user.email}")
+            
+            # Combine filter parts with AND
+            if filter_parts:
+                metadata_filter = " AND ".join(filter_parts)
+                logger.info(f"Applied Discovery Engine filter: {metadata_filter}")
+            else:
+                logger.info("No filter applied - searching all indexed documents")
+                
+        except Exception as filter_error:
+            # SAFETY: If filter construction fails, log and continue without filter
+            logger.warning(f"Failed to build metadata filter: {filter_error}. Continuing without filter.")
+            metadata_filter = None
 
     # Perform the search (try multiple serving configs if needed)
         response = None
@@ -867,10 +918,43 @@ def search_related_documents(query: str, *, current_user: Optional[User] = None,
                     "note": "Using sample snippets (fallback mode)"
                 }
 
+        # SAFETY FALLBACK: Post-filter results by user/document if Discovery Engine filter wasn't applied
+        # This ensures privacy even if the schema doesn't support filtering
+        filtered_snippets = related_snippets
+        
+        if current_user and scope == "user" and not os.getenv("RAG_FILTER_METADATA"):
+            # Filter wasn't applied by Discovery Engine, apply it here
+            try:
+                user_id = current_user.id
+                filtered_snippets = [
+                    s for s in related_snippets
+                    if f"/users/{user_id}/" in s.get("document_url", "") or 
+                       f"/users/{user_id}/" in s.get("source", "")
+                ]
+                if len(filtered_snippets) < len(related_snippets):
+                    logger.info(f"Post-filtered snippets: {len(related_snippets)} → {len(filtered_snippets)} (user-only)")
+            except Exception as filter_err:
+                logger.warning(f"Post-filter failed: {filter_err}. Returning all results.")
+                filtered_snippets = related_snippets
+        
+        elif document_id and scope == "document":
+            # Filter to specific document
+            try:
+                filtered_snippets = [
+                    s for s in related_snippets
+                    if document_id in s.get("document_url", "") or 
+                       document_id in s.get("source", "")
+                ]
+                if len(filtered_snippets) < len(related_snippets):
+                    logger.info(f"Post-filtered snippets: {len(related_snippets)} → {len(filtered_snippets)} (document-only)")
+            except Exception as filter_err:
+                logger.warning(f"Post-filter failed: {filter_err}. Returning all results.")
+                filtered_snippets = related_snippets
+
         return {
             "success": True,
-            "related_snippets": related_snippets,
-            "total_results": len(related_snippets),
+            "related_snippets": filtered_snippets,
+            "total_results": len(filtered_snippets),
             "search_query": sanitized_query,
             "note": ""
         }
@@ -1657,6 +1741,8 @@ async def rag_search_endpoint(request: RAGSearchRequest, current_user: User = De
     
     - **query**: The search query (selected text)
     - **document_context**: Optional context about the current document
+    - **document_id**: Optional document ID to scope search to single document
+    - **scope**: Search scope - "user" (default, all user docs) or "document" (current doc only)
     """
     try:
         query = request.query.strip()
@@ -1672,8 +1758,39 @@ async def rag_search_endpoint(request: RAGSearchRequest, current_user: User = De
             query = query[:1000]
             logger.warning("Query truncated to 1,000 characters")
 
-        # Search for related documents (pass user and context for optional filtering)
-        search_result = search_related_documents(query, current_user=current_user, document_context=request.document_context or "")
+        # Extract scope and document_id from request (with safe defaults)
+        scope = getattr(request, "scope", "user") or "user"
+        document_id = getattr(request, "document_id", None)
+        
+        # Validate scope parameter
+        if scope not in ["user", "document"]:
+            logger.warning(f"Invalid scope '{scope}', defaulting to 'user'")
+            scope = "user"
+        
+        # If scope is "document" but no document_id provided, extract from document_context
+        if scope == "document" and not document_id and request.document_context:
+            try:
+                # Try to extract document ID from URL path
+                # Pattern: .../users/{user_id}/{document_id}.pdf
+                import re
+                match = re.search(r'/([^/]+)\.pdf', request.document_context)
+                if match:
+                    document_id = match.group(1)
+                    logger.info(f"Extracted document_id from context: {document_id}")
+            except Exception as extract_error:
+                logger.warning(f"Failed to extract document_id from context: {extract_error}")
+        
+        # Log search parameters for debugging
+        logger.info(f"RAG search - User: {current_user.email}, Scope: {scope}, Doc ID: {document_id}")
+
+        # Search for related documents with filtering
+        search_result = search_related_documents(
+            query, 
+            current_user=current_user, 
+            document_context=request.document_context or "",
+            document_id=document_id,
+            scope=scope
+        )
         
         if search_result["success"]:
             return JSONResponse(

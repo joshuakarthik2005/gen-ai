@@ -98,6 +98,9 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [documentText, setDocumentText] = useState("");
+  
+  // Search scope state: "all" (all user docs) or "current" (current doc only)
+  const [searchScope, setSearchScope] = useState<"all" | "current">("all");
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -458,7 +461,7 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   };
 
   // RAG search function
-  const performRAGSearch = async (query: string) => {
+  const performRAGSearch = async (query: string, scope?: "all" | "current") => {
     if (!query.trim()) return;
     
     setIsSearchingRAG(true);
@@ -468,15 +471,40 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     setLastSearchQuery(query);
     
     try {
-      console.log('Performing RAG search for:', query);
+      console.log('Performing RAG search for:', query, 'Scope:', scope || searchScope);
+      
+      // Extract document ID from URL (pattern: .../filename.pdf or .../uuid.pdf)
+      const extractDocumentId = (url: string): string | null => {
+        try {
+          const match = url.match(/\/([^/]+)\.pdf/i);
+          return match ? match[1] : null;
+        } catch {
+          return null;
+        }
+      };
+      
+      const documentId = extractDocumentId(documentUrl);
+      const effectiveScope = scope || searchScope;
+      
       const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
+      const requestBody: any = {
+        query: query.trim(),
+        document_context: documentUrl,
+        scope: effectiveScope === "current" ? "document" : "user"
+      };
+      
+      // Only add document_id if we're searching current document and we have an ID
+      if (effectiveScope === "current" && documentId) {
+        requestBody.document_id = documentId;
+        console.log('Searching current document only:', documentId);
+      } else {
+        console.log('Searching all user documents');
+      }
+      
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.RAG_SEARCH), {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          query: query.trim(),
-          document_context: documentUrl
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -715,6 +743,22 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Related Snippets</h3>
               <span className="text-xs text-gray-500">{relatedSnippets.length} found</span>
+            </div>
+            
+            {/* Search Scope Toggle */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+              <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={searchScope === "current"}
+                  onChange={(e) => setSearchScope(e.target.checked ? "current" : "all")}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="select-none">Search current document only</span>
+              </label>
+              <div className="ml-auto text-xs text-gray-500">
+                {searchScope === "current" ? "📄 Current doc" : "📚 All my docs"}
+              </div>
             </div>
             
             {isSearchingRAG && (
