@@ -9,7 +9,7 @@ import { withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 // Intentionally hardcoded per request to ensure only this key is used.
 // Do not change to read from env without approval.
-const ADOBE_API_KEY = "42dca80537eb431cad94af71101d769d";
+const ADOBE_API_KEY = "92fd30ffc8ed4c74a35e3da2caeb69ce";
 
 interface DocumentViewerProps {
   documentUrl: string;
