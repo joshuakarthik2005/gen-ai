@@ -957,8 +957,8 @@ def search_related_documents(
     # user-based post-filtering when the dataset clearly encodes user ownership in the URL
     # path (e.g., /users/{id}/...). Otherwise we skip the post-filter to avoid dropping
     # all results in single-tenant or non-user-partitioned indexes.
-    filtered_snippets = related_snippets
-    note_msg = ""
+        filtered_snippets = related_snippets
+        note_msg = ""
         
         # if current_user and scope == "user" and not os.getenv("RAG_FILTER_METADATA"):
         #     try:
@@ -995,7 +995,7 @@ def search_related_documents(
         #         logger.warning(f"Post-filter failed: {filter_err}. Returning all results.")
         #         filtered_snippets = related_snippets
         
-        elif document_id and scope == "document":
+        if document_id and scope == "document":
             # Filter to specific document
             try:
                 filtered_snippets = [
