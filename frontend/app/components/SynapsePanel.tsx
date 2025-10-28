@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   MessageSquare, 
   Lightbulb, 
@@ -119,6 +119,11 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   const [isSearchingRAG, setIsSearchingRAG] = useState(false);
   const [ragSearchError, setRagSearchError] = useState<string | null>(null);
   const [lastSearchQuery, setLastSearchQuery] = useState<string>("");
+  const [ragNote, setRagNote] = useState<string | null>(null);
+  // Track in-flight searches to avoid race conditions and allow cancellation
+  const ragAbortRef = useRef<AbortController | null>(null);
+  const ragRequestIdRef = useRef<number>(0);
+  const debounceTimerRef = useRef<number | null>(null);
 
   const normalizeSummaryResponse = (data: any) => {
     try {
@@ -462,14 +467,31 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
 
   // RAG search function
   const performRAGSearch = async (query: string, scope?: "all" | "current") => {
-    if (!query.trim()) return;
-    
+    const trimmed = (query || "").trim();
+    if (!trimmed) {
+      console.debug('[RAG] skip: empty query');
+      return;
+    }
+    // Optional: avoid spamming the backend with extremely short or noisy fragments
+    // Still allow short, meaningful legal terms like "tenant"
+    const MIN_QUERY_LEN = 3;
+    if (trimmed.length < MIN_QUERY_LEN) {
+      console.debug('[RAG] skip: below min length', { len: trimmed.length, query: trimmed });
+      return;
+    }
+
+    // Mark searching, but keep previous results visible until new ones arrive
     setIsSearchingRAG(true);
     setRagSearchError(null);
-    // Clear previous results to avoid showing stale snippets
-    setRelatedSnippets([]);
-    setLastSearchQuery(query);
-    
+    setRagNote(null);
+    setLastSearchQuery(trimmed);
+
+    // Cancel any previous in-flight request
+  try { ragAbortRef.current?.abort(); console.debug('[RAG] aborted previous request'); } catch { /* ignore */ }
+    const controller = new AbortController();
+    ragAbortRef.current = controller;
+    const myReqId = ++ragRequestIdRef.current;
+
     try {
       console.log('Performing RAG search for:', query, 'Scope:', scope || searchScope);
       
@@ -501,20 +523,34 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
         console.log('Searching all user documents');
       }
       
+      console.debug('[RAG] fetch -> /rag-search', { requestBody });
       const response = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.RAG_SEARCH), {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
         throw new Error(`RAG search failed: ${response.status}`);
       }
-
-  const data: RAGSearchResult = await response.json();
+      const data: RAGSearchResult = await response.json();
       console.log('RAG search results:', data);
-  // If backend returns nothing, keep it empty to show proper empty state
-  setRelatedSnippets(Array.isArray(data.related_snippets) ? data.related_snippets : []);
+      // Ignore outdated responses if a newer request has started
+      if (myReqId !== ragRequestIdRef.current) {
+        console.debug('[RAG] ignoring stale response');
+        return;
+      }
+      // Capture any backend diagnostic note
+      setRagNote(data?.note || null);
+      // If backend returns nothing, keep it empty to show proper empty state
+      const snippets = Array.isArray(data.related_snippets) ? data.related_snippets : [];
+      // If new results are empty but we already have some, avoid clearing on likely transient/partial selections
+      if (snippets.length === 0 && relatedSnippets.length > 0 && trimmed.length < 8) {
+        console.log('Skipping overwrite with empty results for very short query; keeping previous snippets');
+      } else {
+        setRelatedSnippets(snippets);
+      }
       
       // Switch to snippets tab to show results
       setActiveTab('snippets');
@@ -523,63 +559,76 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
       console.error('RAG search error:', error);
       setRagSearchError((error as Error).message || 'Failed to search related documents');
       // Ensure no stale snippets are displayed upon error
-      setRelatedSnippets([]);
+      // Keep existing results on error to avoid flicker unless none exist
+      if (relatedSnippets.length === 0) setRelatedSnippets([]);
     } finally {
       setIsSearchingRAG(false);
     }
   };
 
-  // Handle RAG search query from document viewer
-  useEffect(() => {
-    if (ragSearchQuery && ragSearchQuery.trim() !== "" && ragSearchQuery !== lastSearchQuery) {
-      performRAGSearch(ragSearchQuery);
-    }
-  }, [ragSearchQuery]);
-
-  // Handle explained text from document viewer
+  // Handle explained text from document viewer - trigger BOTH explain AND RAG search
   useEffect(() => {
     const run = async () => {
-      if (!explainedText || explainedText.trim() === "") return;
-      setIsAnalyzing(true);
-      try {
-        const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
-        const resp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXPLAIN_SELECTION), {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ selected_text: explainedText, document_url: documentUrl })
-        });
-        if (!resp.ok) {
-          const errText = await resp.text().catch(() => '');
-          throw new Error(errText || `Explain-selection failed (${resp.status})`);
-        }
-        const data = await resp.json();
-        const explanation = data?.explanation || 'No explanation returned.';
-        const newAnalysis: Analysis = {
-          id: Date.now().toString(),
-          text: explainedText,
-          explanation,
-          timestamp: new Date().toLocaleTimeString(),
-          type: 'explanation'
-        };
-        setAnalyses(prev => [newAnalysis, ...prev]);
-        setActiveTab('analysis');
-      } catch (e) {
-        console.error('Explain-selection error:', e);
-        const fallback: Analysis = {
-          id: Date.now().toString(),
-          text: explainedText,
-          explanation: `I couldn't reach the explanation service. Here's a quick note: This clause may define obligations, timelines, or risks. If this keeps happening, check your API URL and auth.`,
-          timestamp: new Date().toLocaleTimeString(),
-          type: 'warning'
-        };
-        setAnalyses(prev => [fallback, ...prev]);
-        setActiveTab('analysis');
-      } finally {
-        setIsAnalyzing(false);
+      const textToProcess = explainedText || ragSearchQuery || "";
+      if (!textToProcess || textToProcess.trim() === "") return;
+      
+      const trimmed = textToProcess.trim();
+      
+      // Skip if this is the exact same query we just processed
+      if (trimmed === lastSearchQuery) {
+        console.debug('[Selection] Skipping duplicate', { trimmed });
+        return;
       }
+      
+      console.log('[Selection] Processing:', trimmed);
+      
+      // Fire explain-selection
+      if (explainedText && explainedText.trim()) {
+        setIsAnalyzing(true);
+        try {
+          const headers = await withAuthHeaders({ 'Content-Type': 'application/json' });
+          const resp = await fetch(getApiUrl(API_CONFIG.ENDPOINTS.EXPLAIN_SELECTION), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ selected_text: explainedText, document_url: documentUrl })
+          });
+          if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            throw new Error(errText || `Explain-selection failed (${resp.status})`);
+          }
+          const data = await resp.json();
+          const explanation = data?.explanation || 'No explanation returned.';
+          const newAnalysis: Analysis = {
+            id: Date.now().toString(),
+            text: explainedText,
+            explanation,
+            timestamp: new Date().toLocaleTimeString(),
+            type: 'explanation'
+          };
+          setAnalyses(prev => [newAnalysis, ...prev]);
+          setActiveTab('analysis');
+        } catch (e) {
+          console.error('Explain-selection error:', e);
+          const fallback: Analysis = {
+            id: Date.now().toString(),
+            text: explainedText,
+            explanation: `I couldn't reach the explanation service. Here's a quick note: This clause may define obligations, timelines, or risks. If this keeps happening, check your API URL and auth.`,
+            timestamp: new Date().toLocaleTimeString(),
+            type: 'warning'
+          };
+          setAnalyses(prev => [fallback, ...prev]);
+          setActiveTab('analysis');
+        } finally {
+          setIsAnalyzing(false);
+        }
+      }
+      
+      // Fire RAG search immediately (no debounce)
+      console.log('[Selection] Triggering RAG search for:', trimmed);
+      performRAGSearch(trimmed);
     };
     run();
-  }, [explainedText]);
+  }, [explainedText, ragSearchQuery]);
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -751,13 +800,26 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
                 <input
                   type="checkbox"
                   checked={searchScope === "current"}
-                  onChange={(e) => setSearchScope(e.target.checked ? "current" : "all")}
+                  onChange={(e) => {
+                    const newScope = e.target.checked ? "current" : "all";
+                    setSearchScope(newScope);
+                    // Re-trigger search with new scope if we have a last query
+                    if (lastSearchQuery) {
+                      console.log('[Scope] Changed to:', newScope, '- re-running search');
+                      performRAGSearch(lastSearchQuery, newScope);
+                    }
+                  }}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="select-none">Search current document only</span>
               </label>
-              <div className="ml-auto text-xs text-gray-500">
-                {searchScope === "current" ? "📄 Current doc" : "📚 All my docs"}
+              <div className="ml-auto flex items-center gap-1 text-xs text-gray-500">
+                <span>{searchScope === "current" ? "📄 Current doc" : "📚 All my docs"}</span>
+                {searchScope === "all" && (
+                  <span className="text-xs text-amber-600" title="Cross-document search requires RAG_FILTER_METADATA backend configuration">
+                    ⚠️
+                  </span>
+                )}
               </div>
             </div>
             
@@ -776,11 +838,26 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
                 </div>
               </div>
             )}
+            {!ragSearchError && ragNote && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="text-xs text-blue-700">
+                  {ragNote}
+                </div>
+              </div>
+            )}
             
             {relatedSnippets.length === 0 && !isSearchingRAG && !ragSearchError && (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Select text from the document to find related snippets</p>
+                <p className="text-sm">No related snippets found. Try toggling the scope to "Search current document only" or adjust your selection.</p>
+                <div className="mt-3">
+                  <button
+                    className="px-3 py-1.5 text-xs rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200"
+                    onClick={() => performRAGSearch(lastSearchQuery || ragSearchQuery || '', 'current')}
+                  >
+                    Try current document only
+                  </button>
+                </div>
               </div>
             )}
             
