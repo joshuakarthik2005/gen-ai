@@ -136,12 +136,15 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
       return;
     }
 
+    console.log("Attempting to delete document with ID:", docId);
+
     if (!confirm("Are you sure you want to delete this document? This action cannot be undone.")) {
       return;
     }
 
     try {
       const token = localStorage.getItem("token");
+      console.log("Sending delete request with blob_name:", docId);
       const response = await fetch(`${apiUrl}/delete-document`, {
         method: "DELETE",
         headers: {
@@ -157,7 +160,8 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
       } else {
         const errorData = await response.json();
         console.error("Delete failed:", errorData);
-        alert("Delete failed: " + (errorData.detail || "Unknown error"));
+        console.error("Attempted to delete blob:", docId);
+        alert("Delete failed: " + (errorData.detail || "Unknown error") + "\n\nBlob path: " + docId);
       }
     } catch (error) {
       console.error("Delete error:", error);

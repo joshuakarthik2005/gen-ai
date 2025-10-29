@@ -2451,18 +2451,36 @@ async def delete_document(request: DeleteDocumentRequest, current_user: User = D
             bucket = client.bucket(bucket_name)
             blob = bucket.blob(blob_name)
             
-            # Try to delete - if the file doesn't exist, blob.delete() will fail silently or raise
+            logger.info(f"Attempting to delete blob: {blob_name} from bucket: {bucket_name}")
+            
+            # Delete the blob - GCS will succeed even if file doesn't exist
             try:
+                # First check if it exists
+                if not blob.exists():
+                    logger.warning(f"Blob does not exist: {blob_name}")
+                    raise HTTPException(status_code=404, detail=f"File not found in storage. Path: {blob_name}")
+                
+                # Delete the blob
                 blob.delete()
                 logger.info(f"Successfully deleted file {blob_name} for user {current_user.email}")
+                
+            except HTTPException:
+                raise
             except Exception as delete_error:
-                logger.error(f"Blob delete error for {blob_name}: {str(delete_error)}")
+                logger.error(f"Blob delete error for {blob_name}: {str(delete_error)}", exc_info=True)
+                error_msg = str(delete_error)
+                
                 # Check if it's a "not found" error
-                if "404" in str(delete_error) or "not found" in str(delete_error).lower():
-                    raise HTTPException(status_code=404, detail="File not found in storage")
+                if "404" in error_msg or "not found" in error_msg.lower():
+                    raise HTTPException(status_code=404, detail=f"File not found in storage. Path: {blob_name}")
+                
+                # Check for permission errors
+                if "403" in error_msg or "permission" in error_msg.lower() or "forbidden" in error_msg.lower():
+                    raise HTTPException(status_code=403, detail=f"Permission denied to delete file. Error: {error_msg}")
+                
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to delete file: {str(delete_error)}"
+                    detail=f"Failed to delete file: {error_msg}"
                 )
             
             return JSONResponse(
