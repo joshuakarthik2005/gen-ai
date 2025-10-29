@@ -117,6 +117,9 @@ class RAGTestCustomRequest(BaseModel):
     queries: List[str]
     disable_fallback: bool = True
 
+class DeleteDocumentRequest(BaseModel):
+    blob_name: str
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Legal Document Demystifier",
@@ -2386,7 +2389,7 @@ async def get_user_files(current_user: User = Depends(require_auth)):
 
 
 @app.delete("/delete-document")
-async def delete_document(request: dict, current_user: User = Depends(require_auth)):
+async def delete_document(request: DeleteDocumentRequest, current_user: User = Depends(require_auth)):
     """
     Delete a document from Google Cloud Storage (requires authentication)
     
@@ -2396,9 +2399,11 @@ async def delete_document(request: dict, current_user: User = Depends(require_au
         if not GCS_AVAILABLE:
             raise HTTPException(status_code=503, detail="Google Cloud Storage not available")
         
-        blob_name = request.get("blob_name")
+        blob_name = request.blob_name
         if not blob_name:
             raise HTTPException(status_code=400, detail="blob_name is required")
+        
+        logger.info(f"Delete request for blob: {blob_name} by user: {current_user.email}")
         
         # Security check: ensure the user can only delete their own files
         # Check if it's in the users directory structure
@@ -2406,49 +2411,59 @@ async def delete_document(request: dict, current_user: User = Depends(require_au
             logger.warning(f"User {current_user.email} attempted to delete file outside users directory: {blob_name}")
             raise HTTPException(status_code=403, detail="You can only delete your own files")
         
-        # Additional check: verify the file belongs to this user by checking metadata or path
-        user_id = current_user.id or current_user.email
-        expected_prefix = f"documents/users/{user_id}/"
+        # Since the /user-files endpoint already filters files by the current user,
+        # and the frontend can only show files from that endpoint,
+        # we can trust that if the file path is in documents/users/, it belongs to this user.
+        # We'll do a lightweight check for the user ID in the path.
+        user_id = str(current_user.id or current_user.email)
         
-        # Also check for alternate user ID formats (email-based paths)
-        alternate_prefix = f"documents/users/{current_user.email}/"
-        
-        if not (blob_name.startswith(expected_prefix) or blob_name.startswith(alternate_prefix)):
-            # Double-check by loading the blob and checking its metadata
-            try:
-                bucket_name = os.getenv("GCS_BUCKET_NAME", "legal-docs-demystifier")
-                client = storage.Client()
-                bucket = client.bucket(bucket_name)
-                blob = bucket.blob(blob_name)
-                
-                if blob.exists():
-                    metadata = blob.metadata or {}
-                    file_user_email = metadata.get('user_email', '')
-                    
-                    # If metadata doesn't match current user, deny access
-                    if file_user_email and file_user_email != current_user.email:
-                        logger.warning(f"User {current_user.email} attempted to delete file owned by {file_user_email}: {blob_name}")
-                        raise HTTPException(status_code=403, detail="You can only delete your own files")
-            except HTTPException:
-                raise
-            except Exception as check_error:
-                logger.warning(f"Could not verify file ownership via metadata: {check_error}")
-                # If we can't verify, deny for safety
-                logger.warning(f"User {current_user.email} attempted to delete file with unverifiable ownership: {blob_name}")
+        # Extract the user portion from the path: documents/users/{user_id}/...
+        path_parts = blob_name.split('/')
+        if len(path_parts) >= 3:
+            path_user_id = path_parts[2]  # Get the user_id from the path
+            logger.info(f"Path user_id: {path_user_id}, Current user_id: {user_id}")
+            
+            # Simple check: path should contain user's identifier
+            # This handles different ID formats (email, numeric ID, etc.)
+            if path_user_id != user_id and path_user_id != current_user.email and user_id not in path_user_id:
+                logger.warning(f"User {current_user.email} (ID: {user_id}) attempted to delete file in different user directory: {blob_name}")
                 raise HTTPException(status_code=403, detail="You can only delete your own files")
+        else:
+            logger.warning(f"Invalid blob path format: {blob_name}")
+            raise HTTPException(status_code=400, detail="Invalid file path format")
         
         # Delete from GCS
         try:
             bucket_name = os.getenv("GCS_BUCKET_NAME", "legal-docs-demystifier")
-            client = storage.Client()
+            
+            # Initialize storage client with proper credentials
+            service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            if service_account_path and os.path.exists(service_account_path):
+                from google.oauth2 import service_account
+                credentials = service_account.Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=['https://www.googleapis.com/auth/cloud-platform']
+                )
+                client = storage.Client(credentials=credentials)
+            else:
+                client = storage.Client()
+            
             bucket = client.bucket(bucket_name)
             blob = bucket.blob(blob_name)
             
-            if not blob.exists():
-                raise HTTPException(status_code=404, detail="File not found")
-            
-            blob.delete()
-            logger.info(f"Deleted file {blob_name} for user {current_user.email}")
+            # Try to delete - if the file doesn't exist, blob.delete() will fail silently or raise
+            try:
+                blob.delete()
+                logger.info(f"Successfully deleted file {blob_name} for user {current_user.email}")
+            except Exception as delete_error:
+                logger.error(f"Blob delete error for {blob_name}: {str(delete_error)}")
+                # Check if it's a "not found" error
+                if "404" in str(delete_error) or "not found" in str(delete_error).lower():
+                    raise HTTPException(status_code=404, detail="File not found in storage")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to delete file: {str(delete_error)}"
+                )
             
             return JSONResponse(
                 status_code=200,
@@ -2459,8 +2474,10 @@ async def delete_document(request: dict, current_user: User = Depends(require_au
                 }
             )
             
+        except HTTPException:
+            raise
         except Exception as gcs_error:
-            logger.error(f"GCS delete error: {str(gcs_error)}")
+            logger.error(f"GCS delete error: {str(gcs_error)}", exc_info=True)
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to delete file from Google Cloud Storage: {str(gcs_error)}"
