@@ -63,8 +63,8 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
         const data = await response.json();
         const files = data.files || [];
         const formattedDocs = files.map((file: any) => ({
-          id: file.name,
-          name: file.name,
+          id: file.id, // This is the full blob path from backend
+          name: file.name, // This is the display name
           type: "PDF Document",
           uploadDate: file.upload_date ? new Date(file.upload_date).toLocaleDateString() : "Unknown",
           size: file.size,

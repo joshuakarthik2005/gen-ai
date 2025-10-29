@@ -2401,12 +2401,41 @@ async def delete_document(request: dict, current_user: User = Depends(require_au
             raise HTTPException(status_code=400, detail="blob_name is required")
         
         # Security check: ensure the user can only delete their own files
+        # Check if it's in the users directory structure
+        if not blob_name.startswith("documents/users/"):
+            logger.warning(f"User {current_user.email} attempted to delete file outside users directory: {blob_name}")
+            raise HTTPException(status_code=403, detail="You can only delete your own files")
+        
+        # Additional check: verify the file belongs to this user by checking metadata or path
         user_id = current_user.id or current_user.email
         expected_prefix = f"documents/users/{user_id}/"
         
-        if not blob_name.startswith(expected_prefix):
-            logger.warning(f"User {current_user.email} attempted to delete file outside their directory: {blob_name}")
-            raise HTTPException(status_code=403, detail="You can only delete your own files")
+        # Also check for alternate user ID formats (email-based paths)
+        alternate_prefix = f"documents/users/{current_user.email}/"
+        
+        if not (blob_name.startswith(expected_prefix) or blob_name.startswith(alternate_prefix)):
+            # Double-check by loading the blob and checking its metadata
+            try:
+                bucket_name = os.getenv("GCS_BUCKET_NAME", "legal-docs-demystifier")
+                client = storage.Client()
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+                
+                if blob.exists():
+                    metadata = blob.metadata or {}
+                    file_user_email = metadata.get('user_email', '')
+                    
+                    # If metadata doesn't match current user, deny access
+                    if file_user_email and file_user_email != current_user.email:
+                        logger.warning(f"User {current_user.email} attempted to delete file owned by {file_user_email}: {blob_name}")
+                        raise HTTPException(status_code=403, detail="You can only delete your own files")
+            except HTTPException:
+                raise
+            except Exception as check_error:
+                logger.warning(f"Could not verify file ownership via metadata: {check_error}")
+                # If we can't verify, deny for safety
+                logger.warning(f"User {current_user.email} attempted to delete file with unverifiable ownership: {blob_name}")
+                raise HTTPException(status_code=403, detail="You can only delete your own files")
         
         # Delete from GCS
         try:
