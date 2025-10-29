@@ -863,16 +863,6 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             
             {relatedSnippets.map((snippet, index) => (
               <div key={index} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow">
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-xs px-2 py-1 rounded-full font-medium bg-blue-100 text-blue-800">
-                    Document
-                  </span>
-                  <div className="flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-xs text-gray-500">{Math.round((snippet.relevance_score || 0) * 100)}%</span>
-                  </div>
-                </div>
-                
                 <p className="text-sm text-gray-700 mb-3 leading-relaxed">
                   {snippet.text}
                 </p>

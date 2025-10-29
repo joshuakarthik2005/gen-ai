@@ -2385,6 +2385,65 @@ async def get_user_files(current_user: User = Depends(require_auth)):
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
+@app.delete("/delete-document")
+async def delete_document(request: dict, current_user: User = Depends(require_auth)):
+    """
+    Delete a document from Google Cloud Storage (requires authentication)
+    
+    - **blob_name**: The GCS blob name/path of the file to delete (e.g., "documents/users/{user_id}/filename.pdf")
+    """
+    try:
+        if not GCS_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Google Cloud Storage not available")
+        
+        blob_name = request.get("blob_name")
+        if not blob_name:
+            raise HTTPException(status_code=400, detail="blob_name is required")
+        
+        # Security check: ensure the user can only delete their own files
+        user_id = current_user.id or current_user.email
+        expected_prefix = f"documents/users/{user_id}/"
+        
+        if not blob_name.startswith(expected_prefix):
+            logger.warning(f"User {current_user.email} attempted to delete file outside their directory: {blob_name}")
+            raise HTTPException(status_code=403, detail="You can only delete your own files")
+        
+        # Delete from GCS
+        try:
+            bucket_name = os.getenv("GCS_BUCKET_NAME", "legal-docs-demystifier")
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            
+            if not blob.exists():
+                raise HTTPException(status_code=404, detail="File not found")
+            
+            blob.delete()
+            logger.info(f"Deleted file {blob_name} for user {current_user.email}")
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": True,
+                    "message": "File deleted successfully",
+                    "blob_name": blob_name
+                }
+            )
+            
+        except Exception as gcs_error:
+            logger.error(f"GCS delete error: {str(gcs_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete file from Google Cloud Storage: {str(gcs_error)}"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in delete_document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
 @app.get("/proxy-gcs/{bucket_name}/{file_path:path}")
 async def proxy_gcs_file(bucket_name: str, file_path: str, current_user: dict = Depends(get_current_active_user)):
     """Proxy to serve files from Google Cloud Storage when signed URLs don't work"""

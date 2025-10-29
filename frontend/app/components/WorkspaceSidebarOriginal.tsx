@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, Star, Clock, FileText, Plus, Upload, Settings, User } from "lucide-react";
+import { Search, Star, Clock, FileText, Plus, Upload, Settings, User, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
 type WorkspaceDocument = {
@@ -129,6 +129,42 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
     }
   };
 
+  const handleDeleteDocument = async (docId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent document selection when clicking delete
+    
+    if (!isAuthenticated) {
+      return;
+    }
+
+    if (!confirm("Are you sure you want to delete this document? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${apiUrl}/delete-document`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ blob_name: docId })
+      });
+
+      if (response.ok) {
+        await loadUserDocuments(); // Reload the documents list
+        alert("Document deleted successfully");
+      } else {
+        const errorData = await response.json();
+        console.error("Delete failed:", errorData);
+        alert("Delete failed: " + (errorData.detail || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Delete error: " + error);
+    }
+  };
+
   const documents = isAuthenticated ? userDocuments : sampleDocuments;
   const filteredDocuments = documents.filter(doc =>
     doc.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -234,6 +270,15 @@ export default function WorkspaceSidebar({ onDocumentSelect }: WorkspaceSidebarP
                     {doc.type} • {doc.uploadDate}
                   </p>
                 </div>
+                {isAuthenticated && (
+                  <button
+                    onClick={(e) => handleDeleteDocument(doc.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                    title="Delete document"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

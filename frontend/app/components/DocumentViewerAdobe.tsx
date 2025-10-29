@@ -9,7 +9,7 @@ import { withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 // Now uses environment variable to support multiple environments/machines
 // Set NEXT_PUBLIC_ADOBE_CLIENT_ID in .env.local
-const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "e3b008974ccc4ac5aacabe3252c01c67";
+const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "42dca80537eb431cad94af71101d769d";
 
 // Debug logging for troubleshooting (will show in browser console)
 if (typeof window !== 'undefined') {
@@ -414,7 +414,9 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
           enableFormFilling: true,
           includePDFAnnotations: true,
           enableFilePreviewEvents: true,
-          focusOnRendering: false
+          focusOnRendering: false,
+          showProgressBar: false,
+          showLoadingBadge: false
         }
       );
 
@@ -550,9 +552,23 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
         <div 
           id={viewerId}
           ref={viewerRef}
-          className="w-full h-full"
+          className="w-full h-full adobe-pdf-viewer"
           style={{ minHeight: '600px' }}
         />
+
+        {/* CSS to hide Adobe's default loading badge */}
+        <style jsx>{`
+          :global(#${viewerId}) :global([class*="loading"]),
+          :global(#${viewerId}) :global([class*="Loading"]),
+          :global(#${viewerId}) :global([class*="progress"]),
+          :global(#${viewerId}) :global([class*="Progress"]),
+          :global(#${viewerId}) :global([role="progressbar"]),
+          :global(#${viewerId}) :global([data-testid*="loading"]),
+          :global(#${viewerId}) :global(.nui-loading-badge),
+          :global(#${viewerId}) :global(.loading-badge) {
+            display: none !important;
+          }
+        `}</style>
 
         {/* Explain Tooltip removed: auto-trigger explain and RAG on selection */}
 
