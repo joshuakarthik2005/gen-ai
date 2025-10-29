@@ -2434,7 +2434,8 @@ async def delete_document(request: DeleteDocumentRequest, current_user: User = D
         
         # Delete from GCS
         try:
-            bucket_name = os.getenv("GCS_BUCKET_NAME", "legal-docs-demystifier")
+            # Use the same default bucket as upload/list endpoints to avoid mismatches
+            bucket_name = os.getenv("GCS_BUCKET_NAME", "demystifier-ai_cloudbuild")
             
             # Initialize storage client with proper credentials
             service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
