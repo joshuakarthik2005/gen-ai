@@ -160,14 +160,14 @@ def initialize_vertex_ai():
         
         # Project settings
         project_id = "demystifier-ai"
-        location = "asia-south1"  # Mumbai region works for India users!
+        location = "us-central1"  # US region for Gemini 2.0 models availability
         
         # Initialize Vertex AI
         vertexai.init(project=project_id, location=location)
         
         # Create the generative model instance if available
         if GenerativeModel:
-            model = GenerativeModel("gemini-1.5-pro")
+            model = GenerativeModel("gemini-2.0-pro-exp")
         else:
             # Alternative model setup
             logger.warning("Using alternative model initialization")
@@ -242,7 +242,7 @@ def analyze_legal_document(legal_text: str) -> Dict[str, Any]:
         return {
             "success": True,
             "analysis": response.text,
-            "model_used": "gemini-pro"
+            "model_used": "gemini-2.0-pro-exp"
         }
         
     except Exception as e:
@@ -1257,7 +1257,7 @@ async def chat_endpoint(request: ChatRequest, current_user: User = Depends(requi
                     text = "I couldn't generate a response right now. Please try again."
                 return {
                     "response": text,
-                    "model_used": "gemini-1.5-pro",
+                    "model_used": "gemini-2.0-pro-exp",
                     "grounded": bool(document_text),
                 }
             except Exception as gen_err:
@@ -1595,7 +1595,7 @@ def summarize_legal_document(legal_text: str) -> Dict[str, Any]:
         return {
             "success": True,
             "summary": response.text,
-            "model_used": "gemini-1.5-pro"
+            "model_used": "gemini-2.0-pro-exp"
         }
         
     except Exception as e:
