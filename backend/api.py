@@ -162,24 +162,35 @@ def initialize_vertex_ai():
         project_id = "demystifier-ai"
         location = "us-central1"  # US region for Gemini 2.0 models availability
         
+        logger.info(f"Attempting to initialize Vertex AI with project: {project_id}, location: {location}")
         # Initialize Vertex AI
         vertexai.init(project=project_id, location=location)
+        logger.info("Vertex AI `init` call successful.")
         
         # Create the generative model instance if available
         if GenerativeModel:
-            model = GenerativeModel("gemini-2.0-pro-exp")
+            # Using auto-updated alias (always points to latest stable 2.0 Flash)
+            model_name = "gemini-2.0-flash"
+            logger.info(f"Attempting to load model: {model_name}")
+            model = GenerativeModel(model_name)
+            logger.info(f"Successfully loaded model: {model_name}")
         else:
             # Alternative model setup
-            logger.warning("Using alternative model initialization")
+            logger.warning("Using alternative model initialization (GenerativeModel not directly available)")
             model = None  # Will handle in analyze function
         
         vertex_ai_initialized = True
-        logger.info(f"Vertex AI initialized with project: {project_id}, location: {location}")
+        logger.info(f"Vertex AI initialized successfully.")
         
         return True
         
     except Exception as e:
-        logger.error(f"Failed to initialize Vertex AI: {str(e)}")
+        import traceback
+        logger.error(f"CRITICAL: Failed to initialize Vertex AI. Fallback mode will be active.")
+        logger.error(f"Error details: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        vertex_ai_initialized = False # Ensure it's false on failure
+        model = None
         return False
 
 
@@ -242,7 +253,7 @@ def analyze_legal_document(legal_text: str) -> Dict[str, Any]:
         return {
             "success": True,
             "analysis": response.text,
-            "model_used": "gemini-2.0-pro-exp"
+            "model_used": "gemini-2.0-flash"
         }
         
     except Exception as e:
@@ -1257,7 +1268,7 @@ async def chat_endpoint(request: ChatRequest, current_user: User = Depends(requi
                     text = "I couldn't generate a response right now. Please try again."
                 return {
                     "response": text,
-                    "model_used": "gemini-2.0-pro-exp",
+                    "model_used": "gemini-2.0-flash",
                     "grounded": bool(document_text),
                 }
             except Exception as gen_err:
@@ -1595,7 +1606,7 @@ def summarize_legal_document(legal_text: str) -> Dict[str, Any]:
         return {
             "success": True,
             "summary": response.text,
-            "model_used": "gemini-2.0-pro-exp"
+            "model_used": "gemini-2.0-flash"
         }
         
     except Exception as e:
