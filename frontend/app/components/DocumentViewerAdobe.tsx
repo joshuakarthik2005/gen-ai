@@ -414,9 +414,7 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
           enableFormFilling: true,
           includePDFAnnotations: true,
           enableFilePreviewEvents: true,
-          focusOnRendering: false,
-          showProgressBar: false,
-          showLoadingBadge: false
+          focusOnRendering: false
         }
       );
 
@@ -552,23 +550,9 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
         <div 
           id={viewerId}
           ref={viewerRef}
-          className="w-full h-full adobe-pdf-viewer"
+          className="w-full h-full"
           style={{ minHeight: '600px' }}
         />
-
-        {/* CSS to hide Adobe's default loading badge */}
-        <style jsx>{`
-          :global(#${viewerId}) :global([class*="loading"]),
-          :global(#${viewerId}) :global([class*="Loading"]),
-          :global(#${viewerId}) :global([class*="progress"]),
-          :global(#${viewerId}) :global([class*="Progress"]),
-          :global(#${viewerId}) :global([role="progressbar"]),
-          :global(#${viewerId}) :global([data-testid*="loading"]),
-          :global(#${viewerId}) :global(.nui-loading-badge),
-          :global(#${viewerId}) :global(.loading-badge) {
-            display: none !important;
-          }
-        `}</style>
 
         {/* Explain Tooltip removed: auto-trigger explain and RAG on selection */}
 
