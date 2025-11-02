@@ -154,6 +154,18 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery, on
     return parts.length > 0 ? parts : [text];
   };
 
+  // Helper function to strip markdown formatting from chat messages
+  const stripMarkdown = (text: string): string => {
+    if (!text) return '';
+    
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove bold **text**
+      .replace(/\*([^*]+)\*/g, '$1')      // Remove italic *text*
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // Remove links [text](url)
+      .replace(/`([^`]+)`/g, '$1')        // Remove inline code `text`
+      .trim();
+  };
+
   // Helper function to format markdown text
   const formatMarkdownText = (text: string) => {
     if (!text) return [];
@@ -718,12 +730,44 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery, on
       // Capture any backend diagnostic note
       setRagNote(data?.note || null);
       // If backend returns nothing, keep it empty to show proper empty state
-      const snippets = Array.isArray(data.related_snippets) ? data.related_snippets : [];
+      let snippets = Array.isArray(data.related_snippets) ? data.related_snippets : [];
+      
+      // Clean HTML tags from snippet text and remove duplicates
+      const cleanedSnippets = snippets.map(snippet => ({
+        ...snippet,
+        text: snippet.text
+          .replace(/<b>/gi, '')
+          .replace(/<\/b>/gi, '')
+          .replace(/<[^>]*>/g, '') // Remove any other HTML tags
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim()
+      }));
+      
+      // Remove duplicates based on normalized text content
+      const uniqueSnippets = cleanedSnippets.reduce((acc: RelatedSnippet[], current) => {
+        // Normalize text for comparison: lowercase, remove extra spaces, remove punctuation
+        const normalizeForComparison = (text: string) => 
+          text.toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/[^\w\s]/g, '')
+            .trim();
+        
+        const currentNormalized = normalizeForComparison(current.text);
+        const isDuplicate = acc.some(item => 
+          normalizeForComparison(item.text) === currentNormalized
+        );
+        
+        if (!isDuplicate && current.text.length > 0) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+      
       // If new results are empty but we already have some, avoid clearing on likely transient/partial selections
-      if (snippets.length === 0 && relatedSnippets.length > 0 && trimmed.length < 8) {
+      if (uniqueSnippets.length === 0 && relatedSnippets.length > 0 && trimmed.length < 8) {
         console.log('Skipping overwrite with empty results for very short query; keeping previous snippets');
       } else {
-        setRelatedSnippets(snippets);
+        setRelatedSnippets(uniqueSnippets);
       }
       
       // Switch to snippets tab to show results
@@ -1245,7 +1289,7 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery, on
                     ? 'bg-blue-600 text-white' 
                     : 'bg-white border border-gray-200 text-gray-900'
                   }`}>
-                    <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                    <p className="text-sm whitespace-pre-wrap">{stripMarkdown(message.text)}</p>
                     <p className={`text-xs mt-1 ${message.isUser ? 'text-blue-100' : 'text-gray-500'}`}>
                       {message.timestamp}
                     </p>

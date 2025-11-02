@@ -175,3 +175,17 @@ body {
 .shadow-elevated {
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
+
+/* Hide any Settings and User profile icons globally */
+button[aria-label*="Settings"],
+button[title*="Settings"],
+button[aria-label*="Profile"],
+button[title*="Profile"],
+button[aria-label*="User"],
+button[title*="User"],
+.settings-icon,
+.profile-icon,
+.user-icon {
+  display: none !important;
+  visibility: hidden !important;
+}

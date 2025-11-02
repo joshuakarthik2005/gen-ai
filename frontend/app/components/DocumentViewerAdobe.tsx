@@ -9,7 +9,7 @@ import { getAuthToken, withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 // Now uses environment variable to support multiple environments/machines
 // Set NEXT_PUBLIC_ADOBE_CLIENT_ID in .env.local
-const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "e3b008974ccc4ac5aacabe3252c01c67";
+const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "42dca80537eb431cad94af71101d769d";
 
 // Debug logging for troubleshooting (will show in browser console)
 if (typeof window !== 'undefined') {
@@ -409,13 +409,14 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch, onV
           showLeftHandPanel: true,
           showThumbnails: true,
           showBookmarks: true,
-          showAnnotationTools: true,
+          showAnnotationTools: false,
           showDownloadPDF: true,
           showPrintPDF: true,
           enableFormFilling: true,
           includePDFAnnotations: true,
           enableFilePreviewEvents: true,
-          focusOnRendering: false
+          focusOnRendering: false,
+          showDisabledSaveButton: false
         }
       );
 
@@ -604,6 +605,33 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch, onV
       setAdobeView(adobeDCView);
       setIsLoading(false);
       
+      // Hide unwanted toolbar icons (Settings and User profile)
+      setTimeout(() => {
+        const style = document.createElement('style');
+        style.id = 'adobe-toolbar-custom-styles';
+        // Remove any existing style with this ID
+        const existingStyle = document.getElementById('adobe-toolbar-custom-styles');
+        if (existingStyle) {
+          existingStyle.remove();
+        }
+        style.textContent = `
+          /* Hide Settings icon */
+          button[title="Settings"],
+          button[aria-label="Settings"],
+          .adobe-dc-view-sdk-btn[title*="Settings"],
+          /* Hide User profile icon */
+          button[title="Profile"],
+          button[aria-label="Profile"],
+          .adobe-dc-view-sdk-btn[title*="Profile"],
+          /* Hide any account/user related buttons */
+          button[title*="Account"],
+          button[aria-label*="Account"] {
+            display: none !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }, 1000);
+      
     } catch (err) {
       console.error("Adobe PDF initialization error:", err);
       const errorMsg = err instanceof Error ? err.message : "Failed to initialize PDF viewer";
@@ -642,8 +670,9 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch, onV
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
             <div className="text-center">
-              <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-              <p className="text-gray-600">Loading document...</p>
+              <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-xl font-semibold text-gray-700 mb-2">Preparing Document</p>
+              <p className="text-sm text-gray-500">Please wait while we load your PDF...</p>
             </div>
           </div>
         )}
@@ -651,9 +680,28 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch, onV
         <div 
           id={viewerId}
           ref={viewerRef}
-          className="w-full h-full"
+          className="w-full h-full adobe-pdf-container"
           style={{ minHeight: '600px' }}
         />
+        
+        <style jsx global>{`
+          /* Hide Adobe PDF viewer toolbar icons */
+          #${viewerId} button[title="Settings"],
+          #${viewerId} button[aria-label="Settings"],
+          #${viewerId} button[title="Profile"],
+          #${viewerId} button[aria-label="Profile"],
+          #${viewerId} .settings-button,
+          #${viewerId} .profile-button,
+          .adobe-pdf-container button[title="Settings"],
+          .adobe-pdf-container button[aria-label="Settings"],
+          .adobe-pdf-container button[title="Profile"],
+          .adobe-pdf-container button[aria-label="Profile"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+          }
+        `}</style>
 
         {/* Explain Tooltip removed: auto-trigger explain and RAG on selection */}
 
