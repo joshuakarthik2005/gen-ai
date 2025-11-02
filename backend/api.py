@@ -2549,6 +2549,19 @@ async def proxy_gcs_file(bucket_name: str, file_path: str, current_user: dict = 
         raise HTTPException(status_code=500, detail=f"Error accessing file: {str(e)}")
 
 
+def convert_datetime_to_iso(obj):
+    """Convert datetime objects to ISO format strings recursively"""
+    from datetime import datetime, date
+    
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: convert_datetime_to_iso(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_datetime_to_iso(item) for item in obj]
+    else:
+        return obj
+
 @app.post("/extract-obligations")
 async def extract_obligations_endpoint(
     request: ExtractObligationsRequest,
@@ -2584,6 +2597,9 @@ async def extract_obligations_endpoint(
         )
         
         logger.info(f"Successfully extracted {result['summary']['total']} obligations from document")
+        
+        # Convert datetime objects to ISO strings for JSON serialization
+        result = convert_datetime_to_iso(result)
         
         return JSONResponse(content=result)
         

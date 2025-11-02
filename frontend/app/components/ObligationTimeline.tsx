@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Filter,
   Download,
+  X,
 } from "lucide-react";
 
 interface Obligation {
@@ -222,7 +223,16 @@ export default function ObligationTimeline({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 bg-white rounded-lg shadow-md">
+      <div className="flex items-center justify-center h-64 bg-white rounded-lg shadow-md relative">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-1 hover:bg-gray-100 rounded-full transition-colors"
+            title="Close"
+          >
+            <X className="w-5 h-5 text-gray-600 hover:text-gray-900" />
+          </button>
+        )}
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Extracting obligations and deadlines...</p>
@@ -233,7 +243,16 @@ export default function ObligationTimeline({
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 relative">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-2 right-2 p-1 hover:bg-red-100 rounded-full transition-colors"
+            title="Close"
+          >
+            <X className="w-5 h-5 text-red-600 hover:text-red-900" />
+          </button>
+        )}
         <div className="flex items-center gap-2 text-red-800">
           <AlertCircle className="w-5 h-5" />
           <span className="font-semibold">Error</span>
@@ -276,9 +295,10 @@ export default function ObligationTimeline({
             {onClose && (
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                title="Close"
               >
-                Close
+                <X className="w-5 h-5 text-gray-600 hover:text-gray-900" />
               </button>
             )}
           </div>
