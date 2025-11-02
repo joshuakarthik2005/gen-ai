@@ -32,13 +32,10 @@ export default function Dashboard() {
   const [pendingSearchText, setPendingSearchText] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Check if user has completed onboarding
+  // Show onboarding tutorial when page loads
   useEffect(() => {
-    const hasCompletedOnboarding = localStorage.getItem('onboarding_completed');
-    if (!hasCompletedOnboarding) {
-      // Show onboarding after a short delay
-      setTimeout(() => setShowOnboarding(true), 1000);
-    }
+    // Show onboarding after a short delay every time page loads
+    setTimeout(() => setShowOnboarding(true), 1000);
   }, []);
 
   const handleExplainText = (text: string) => {
