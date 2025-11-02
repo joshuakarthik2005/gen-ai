@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Upload, FileText, Bot, ArrowRight, Lock } from "lucide-react";
 import Header from "./components/Header";
 import DocumentViewer from "./components/DocumentViewerAdobe";
 import WorkspaceSidebar from "./components/WorkspaceSidebarOriginal";
 import SynapsePanel from "./components/SynapsePanel";
 import AuthModal from "./components/AuthModal";
+import OnboardingTutorial from "./components/OnboardingTutorial";
 import { useAuth } from "./contexts/AuthContext";
 
 // Local type to avoid missing module and DOM `Document` conflicts
@@ -27,6 +28,18 @@ export default function Dashboard() {
     name: "Sample Employment Agreement"
   });
   const [ragSearchQuery, setRagSearchQuery] = useState<string>("");
+  const [pdfSearchFunction, setPdfSearchFunction] = useState<((text: string) => void) | null>(null);
+  const [pendingSearchText, setPendingSearchText] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Check if user has completed onboarding
+  useEffect(() => {
+    const hasCompletedOnboarding = localStorage.getItem('onboarding_completed');
+    if (!hasCompletedOnboarding) {
+      // Show onboarding after a short delay
+      setTimeout(() => setShowOnboarding(true), 1000);
+    }
+  }, []);
 
   const handleExplainText = (text: string) => {
     setExplainedText(text);
@@ -40,6 +53,20 @@ export default function Dashboard() {
     setTimeout(() => setRagSearchQuery(""), 100);
   };
 
+  const handleViewerReady = (searchFn: (text: string) => void) => {
+    console.log('📄 Viewer ready. Setting search function.');
+    setPdfSearchFunction(() => searchFn);
+    
+    // If there's a pending search from document switch, execute it now
+    if (pendingSearchText) {
+      console.log('🔎 Executing pending search for:', pendingSearchText.substring(0, 50) + '...');
+      setTimeout(() => {
+        searchFn(pendingSearchText);
+        setPendingSearchText(null);
+      }, 500); // Small delay to ensure viewer is fully initialized
+    }
+  };
+
   const handleDocumentSelect = (document: WorkspaceDocument) => {
     if (document.url) {
       setSelectedDocument({
@@ -49,13 +76,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleSwitchDocument = (url: string, name: string, searchText?: string) => {
+    console.log('🔄 Switching document to:', name, searchText ? 'with pending search' : '');
+    setSelectedDocument({ url, name });
+    // Reset search function since we're loading a new document
+    setPdfSearchFunction(null);
+    // Store search text to execute after new viewer is ready
+    if (searchText) {
+      setPendingSearchText(searchText);
+    }
+  };
+
   return (
     <div className="h-screen bg-white flex flex-col overflow-hidden">
       {/* Header */}
-      <Header />
+      <Header onShowTutorial={() => setShowOnboarding(true)} />
 
       {/* Auth Modal */}
       <AuthModal />
+
+      {/* Onboarding Tutorial */}
+      {showOnboarding && (
+        <OnboardingTutorial onClose={() => setShowOnboarding(false)} />
+      )}
 
       {/* Main Three-Panel Layout */}
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
@@ -71,6 +114,7 @@ export default function Dashboard() {
             filename={selectedDocument.name}
             onExplainText={handleExplainText}
             onRagSearch={handleRagSearch}
+            onViewerReady={handleViewerReady}
           />
         </div>
 
@@ -81,6 +125,8 @@ export default function Dashboard() {
             documentUrl={selectedDocument.url}
             filename={selectedDocument.name}
             ragSearchQuery={ragSearchQuery}
+            onSearchInPDF={pdfSearchFunction || undefined}
+            onSwitchDocument={handleSwitchDocument}
           />
         </div>
       </div>

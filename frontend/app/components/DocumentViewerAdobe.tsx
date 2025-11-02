@@ -4,12 +4,12 @@ import { useState, useEffect, useRef, useId } from "react";
 import ReactDOM from "react-dom";
 import { FileText, MessageSquare, X, Send, Bot, User } from "lucide-react";
 import { API_CONFIG, getApiUrl } from "../config/api";
-import { withAuthHeaders } from "../utils/auth";
+import { getAuthToken, withAuthHeaders } from "../utils/auth";
 
 // Adobe PDF Embed API Configuration
 // Now uses environment variable to support multiple environments/machines
 // Set NEXT_PUBLIC_ADOBE_CLIENT_ID in .env.local
-const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "42dca80537eb431cad94af71101d769d";
+const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "e3b008974ccc4ac5aacabe3252c01c67";
 
 // Debug logging for troubleshooting (will show in browser console)
 if (typeof window !== 'undefined') {
@@ -23,6 +23,7 @@ interface DocumentViewerProps {
   filename: string;
   onExplainText: (text: string) => void;
   onRagSearch?: (query: string) => void;
+  onViewerReady?: (searchFunction: (text: string) => void) => void;
 }
 
 interface ExplainTooltipProps {
@@ -118,7 +119,7 @@ function ExplainTooltip({ x, y, selectedText, onExplain, onClose, position = "fi
   );
 }
 
-const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: DocumentViewerProps) => {
+const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch, onViewerReady }: DocumentViewerProps) => {
   const viewerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -427,6 +428,106 @@ const DocumentViewer = ({ documentUrl, filename, onExplainText, onRagSearch }: D
         
         // Set up text selection monitoring
         adobeViewer.getAPIs().then((apis: any) => {
+          // Helper: find the page number containing the given text by scanning the PDF with pdfjs
+          const findPageNumberForText = async (pdfUrl: string, searchText: string): Promise<number | null> => {
+            try {
+              // Use the proxy to ensure same-origin fetch and avoid CORS
+              // Attach bearer token so the proxy can authenticate to backend-protected URLs
+              let bearer = '';
+              try { bearer = await getAuthToken(); } catch { /* optional */ }
+              const targetUrl = `/api/proxy-pdf?url=${encodeURIComponent(pdfUrl)}${bearer ? `&bearer=${encodeURIComponent(bearer)}` : ''}`;
+
+              // Lazy-load pdfjs only in the browser
+              const pdfjsLib: any = await import('pdfjs-dist');
+              // Configure workerSrc robustly across environments
+              if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+                try {
+                  const workerMod: any = await import('pdfjs-dist/build/pdf.worker.min.js');
+                  (pdfjsLib as any).GlobalWorkerOptions.workerSrc = workerMod?.default || workerMod;
+                } catch {
+                  // Fallback to CDN if bundling the worker fails
+                  const ver = (pdfjsLib as any).version || '3.11.174';
+                  (pdfjsLib as any).GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${ver}/pdf.worker.min.js`;
+                }
+              }
+
+              const loadingTask = (pdfjsLib as any).getDocument({ url: targetUrl });
+              const pdf = await loadingTask.promise;
+
+              // Prepare progressive search terms
+              const normalized = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+              const candidates = [
+                searchText.substring(0, 200),
+                searchText.substring(0, 150),
+                searchText.substring(0, 100),
+                searchText.substring(0, 60),
+                searchText.split(' ').slice(0, 8).join(' '),
+                searchText.split(' ').slice(0, 5).join(' ')
+              ]
+                .map(t => normalized(t))
+                .filter(t => t.length >= 8);
+
+              for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = normalized(textContent.items.map((it: any) => it.str).join(' '));
+
+                for (const cand of candidates) {
+                  if (pageText.includes(cand)) {
+                    return pageNum;
+                  }
+                }
+              }
+
+              return null;
+            } catch (err) {
+              console.warn('PDF text scan failed:', err);
+              return null;
+            }
+          };
+          
+          // Create search function and pass to parent
+          const searchInPDF = async (searchText: string) => {
+            if (!searchText) {
+              console.log('No search text provided');
+              return;
+            }
+            
+            try {
+              console.log('🔎 Searching PDF for snippet, length:', searchText.length);
+              // 1) Try scanning the PDF to find the page number
+              const pageNumber = await findPageNumberForText(documentUrl, searchText);
+              if (pageNumber) {
+                console.log('📄 Navigating PDF to page', pageNumber);
+                try {
+                  await apis.gotoLocation({ pageNumber, zoom: 125 });
+                } catch (navErr) {
+                  console.warn('gotoLocation failed, trying fallback scroll', navErr);
+                  // Fallback: focus the iframe so user can Ctrl+F manually
+                  const pdfContainer = document.getElementById(viewerId);
+                  const iframe = pdfContainer?.querySelector('iframe') as HTMLIFrameElement | null;
+                  iframe?.focus();
+                  alert(`Moved to page ${pageNumber}. Use Ctrl+F and paste the snippet to highlight it.`);
+                }
+                return;
+              }
+
+              // 2) If page not found via PDF scan, give a helpful fallback
+              console.warn('❌ Could not locate text via PDF scan');
+              try {
+                await navigator.clipboard.writeText(searchText);
+              } catch {}
+              alert('Could not automatically locate the text. The snippet has been copied to your clipboard — press Ctrl+F in the PDF and paste to find it.');
+            } catch (e) {
+              console.error('PDF search error:', e);
+            }
+          };
+          
+          // Notify parent that viewer is ready with search function
+          if (onViewerReady) {
+            console.log('✅ Adobe viewer ready. Passing search function to parent.');
+            onViewerReady(searchInPDF);
+          }
           
           // Set up a periodic check for selected content
           const checkSelection = () => {

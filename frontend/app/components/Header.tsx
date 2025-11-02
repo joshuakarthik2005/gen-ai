@@ -2,12 +2,16 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@radix-ui/react-avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@radix-ui/react-dropdown-menu";
-import { Settings, LogOut, User, FileText, ArrowLeftRight, Home, LogIn } from "lucide-react";
+import { Settings, LogOut, User, FileText, ArrowLeftRight, Home, LogIn, HelpCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function Header() {
+interface HeaderProps {
+  onShowTutorial?: () => void;
+}
+
+export default function Header({ onShowTutorial }: HeaderProps) {
   const { user, logout, isAuthenticated, setShowAuthModal } = useAuth();
   const pathname = usePathname();
 
@@ -68,22 +72,36 @@ export default function Header() {
         </nav>
       </div>
 
-      {/* User Profile or Login */}
-      {isAuthenticated && user ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg p-2 transition-colors">
-              <div className="text-right">
-                <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
-                <div className="text-xs text-gray-500">{user.email}</div>
-              </div>
-              <Avatar className="w-8 h-8">
-                <AvatarFallback className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                  {getInitials(user.full_name)}
-                </AvatarFallback>
-              </Avatar>
-            </button>
-          </DropdownMenuTrigger>
+      {/* User Actions */}
+      <div className="flex items-center space-x-3">
+        {/* Help/Tutorial Button */}
+        {onShowTutorial && (
+          <button
+            onClick={onShowTutorial}
+            className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            title="Show tutorial"
+          >
+            <HelpCircle className="w-5 h-5" />
+            <span className="hidden md:inline">Help</span>
+          </button>
+        )}
+
+        {/* User Profile or Login */}
+        {isAuthenticated && user ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg p-2 transition-colors">
+                <div className="text-right">
+                  <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
+                  <div className="text-xs text-gray-500">{user.email}</div>
+                </div>
+                <Avatar className="w-8 h-8">
+                  <AvatarFallback className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                    {getInitials(user.full_name)}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-1">
             <DropdownMenuItem className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded-md cursor-pointer">
               <User className="w-4 h-4" />
@@ -112,6 +130,7 @@ export default function Header() {
           <span>Sign In</span>
         </button>
       )}
+      </div>
     </header>
   );
 }

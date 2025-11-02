@@ -14,7 +14,8 @@ import {
   AlertCircle,
   CheckCircle,
   Brain,
-  Calendar
+  Calendar,
+  Search
 } from "lucide-react";
 
 interface SynapsePanelProps {
@@ -22,6 +23,8 @@ interface SynapsePanelProps {
   documentUrl: string;
   filename: string;
   ragSearchQuery?: string;
+  onSearchInPDF?: (searchText: string) => void;
+  onSwitchDocument?: (url: string, name: string, searchText?: string) => void;
 }
 
 interface RelatedSnippet {
@@ -97,7 +100,7 @@ const toAbsoluteBackendUrl = (input: string): string => {
   }
 };
 
-const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: SynapsePanelProps) => {
+const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery, onSearchInPDF, onSwitchDocument }: SynapsePanelProps) => {
   const [activeTab, setActiveTab] = useState<"snippets" | "analysis" | "chat" | "risks">("snippets");
   const [chatMessage, setChatMessage] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -121,6 +124,127 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   // Risk detection states
   const [riskFindings, setRiskFindings] = useState<RiskFinding[]>([]);
   const [isScanningRisks, setIsScanningRisks] = useState(false);
+
+  // Helper function to parse inline markdown (bold, etc.)
+  const parseInlineMarkdown = (text: string) => {
+    const parts: (string | JSX.Element)[] = [];
+    let currentIndex = 0;
+    const regex = /\*\*([^*]+)\*\*/g;
+    let match;
+    
+    while ((match = regex.exec(text)) !== null) {
+      // Add text before the match
+      if (match.index > currentIndex) {
+        parts.push(text.substring(currentIndex, match.index));
+      }
+      // Add bold text
+      parts.push(
+        <strong key={match.index} className="font-bold text-gray-900">
+          {match[1]}
+        </strong>
+      );
+      currentIndex = regex.lastIndex;
+    }
+    
+    // Add remaining text
+    if (currentIndex < text.length) {
+      parts.push(text.substring(currentIndex));
+    }
+    
+    return parts.length > 0 ? parts : [text];
+  };
+
+  // Helper function to format markdown text
+  const formatMarkdownText = (text: string) => {
+    if (!text) return [];
+    
+    const lines = text.split('\n');
+    const elements: JSX.Element[] = [];
+    
+    lines.forEach((line, idx) => {
+      const trimmedLine = line.trim();
+      
+      // Handle headings (##, ###, etc.)
+      if (trimmedLine.startsWith('###')) {
+        const content = trimmedLine.replace(/^###\s*/, '');
+        elements.push(
+          <h5 key={idx} className="text-sm font-bold text-gray-800 mt-3 mb-1">
+            {parseInlineMarkdown(content)}
+          </h5>
+        );
+      } else if (trimmedLine.startsWith('##')) {
+        const content = trimmedLine.replace(/^##\s*/, '');
+        elements.push(
+          <h4 key={idx} className="text-base font-bold text-gray-900 mt-4 mb-2">
+            {parseInlineMarkdown(content)}
+          </h4>
+        );
+      } else if (trimmedLine.startsWith('#')) {
+        const content = trimmedLine.replace(/^#\s*/, '');
+        elements.push(
+          <h3 key={idx} className="text-lg font-bold text-gray-900 mt-4 mb-2">
+            {parseInlineMarkdown(content)}
+          </h3>
+        );
+      } else if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
+        // Handle bullet points
+        const content = trimmedLine.replace(/^[*-]\s*/, '');
+        elements.push(
+          <div key={idx} className="flex items-start space-x-2 ml-4 my-1">
+            <span className="text-indigo-600 mt-1.5">•</span>
+            <span className="text-sm text-gray-700 leading-relaxed flex-1">
+              {parseInlineMarkdown(content)}
+            </span>
+          </div>
+        );
+      } else if (trimmedLine) {
+        // Regular paragraph
+        elements.push(
+          <p key={idx} className="text-sm leading-relaxed text-gray-700 mb-2">
+            {parseInlineMarkdown(trimmedLine)}
+          </p>
+        );
+      } else {
+        // Empty line for spacing
+        elements.push(<div key={idx} className="h-2"></div>);
+      }
+    });
+    
+    return elements;
+  };
+  
+  // Centralized snippet click handler with auto-document switching
+  const handleSnippetClick = (text: string, snippet: RelatedSnippet) => {
+    try {
+      const isCurrentDoc = snippet.source === filename || snippet.source.includes(filename) || filename.includes(snippet.source);
+      console.log('[SynapsePanel] Snippet clicked', { 
+        hasSearchFn: !!onSearchInPDF, 
+        hasSwitchFn: !!onSwitchDocument,
+        isCurrentDoc, 
+        textLen: text?.length,
+        snippetSource: snippet.source,
+        currentFile: filename
+      });
+      
+      if (!text || !text.trim()) return;
+      if (!onSearchInPDF) {
+        alert('PDF viewer is not ready yet. Please wait a moment and try again.');
+        return;
+      }
+      
+      // Auto-switch to source document if different
+      if (!isCurrentDoc && snippet.document_url && onSwitchDocument) {
+        console.log('🔄 Auto-switching to source document:', snippet.source, 'with deferred search');
+        // Pass search text to switch handler so it can search after viewer is ready
+        onSwitchDocument(snippet.document_url, snippet.source, text);
+      } else {
+        // Same document, search immediately
+        onSearchInPDF(text);
+      }
+    } catch (err) {
+      console.warn('Snippet click handler error:', err);
+    }
+  };
   
   // RAG search states
   const [relatedSnippets, setRelatedSnippets] = useState<RelatedSnippet[]>([]);
@@ -657,6 +781,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
           };
           setAnalyses(prev => [newAnalysis, ...prev]);
           setActiveTab('analysis');
+          // Hide summary when text is selected to show analysis at the top
+          setLaymanSummary(null);
         } catch (e) {
           console.error('Explain-selection error:', e);
           const fallback: Analysis = {
@@ -668,6 +794,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
           };
           setAnalyses(prev => [fallback, ...prev]);
           setActiveTab('analysis');
+          // Hide summary when text is selected to show analysis at the top
+          setLaymanSummary(null);
         } finally {
           setIsAnalyzing(false);
         }
@@ -840,10 +968,42 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
                     </div>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${badge} uppercase tracking-wide`}>{r.severity}</span>
                   </div>
-                  <p className="text-sm text-gray-700 leading-relaxed">
+                  <p 
+                    className="text-sm text-gray-700 leading-relaxed cursor-pointer hover:bg-blue-50 p-2 rounded transition-colors border border-transparent hover:border-blue-200"
+                    onClick={() => {
+                      if (r.snippet) {
+                        // Risk snippets are always from current doc
+                        const riskSnippet: RelatedSnippet = {
+                          text: r.snippet,
+                          source: filename,
+                          relevance_score: 1.0,
+                          document_url: documentUrl
+                        };
+                        handleSnippetClick(r.snippet, riskSnippet);
+                      }
+                    }}
+                    title="Click to find this text in the PDF"
+                  >
                     {r.snippet}
                   </p>
-                  <div className="mt-2 text-xs text-gray-500">Keyword: <span className="font-mono">{r.keyword}</span></div>
+                  {r.explanation && (
+                    <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                      <span className="font-semibold">Why risky:</span> {r.explanation}
+                    </div>
+                  )}
+                  {r.impact && (
+                    <div className="mt-2 text-xs text-orange-700 bg-orange-50 p-2 rounded">
+                      <span className="font-semibold">Impact:</span> {r.impact}
+                    </div>
+                  )}
+                  {r.mitigation && (
+                    <div className="mt-2 text-xs text-green-700 bg-green-50 p-2 rounded">
+                      <span className="font-semibold">Mitigation:</span> {r.mitigation}
+                    </div>
+                  )}
+                  {r.keyword && (
+                    <div className="mt-2 text-xs text-gray-500">Keyword: <span className="font-mono">{r.keyword}</span></div>
+                  )}
                 </div>
               );
             })}
@@ -912,23 +1072,46 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             {relatedSnippets.length === 0 && !isSearchingRAG && !ragSearchError && (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No related snippets found. Try toggling the scope to "Search current document only" or adjust your selection.</p>
-                <div className="mt-3">
-                  <button
-                    className="px-3 py-1.5 text-xs rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                    onClick={() => performRAGSearch(lastSearchQuery || ragSearchQuery || '', 'current')}
-                  >
-                    Try current document only
-                  </button>
-                </div>
+                {!lastSearchQuery ? (
+                  <>
+                    <p className="text-sm font-medium mb-2">Select text in the PDF to see related snippets</p>
+                    <p className="text-xs text-gray-400">Highlight any text in the document viewer to search for related content across your documents.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm">No related snippets found. Try toggling the scope to "Search current document only" or adjust your selection.</p>
+                    <div className="mt-3">
+                      <button
+                        className="px-3 py-1.5 text-xs rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200"
+                        onClick={() => performRAGSearch(lastSearchQuery || ragSearchQuery || '', 'current')}
+                      >
+                        Try current document only
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             
-            {relatedSnippets.map((snippet, index) => (
+            {relatedSnippets.map((snippet, index) => {
+              const isCurrentDoc = snippet.source === filename || snippet.source.includes(filename) || filename.includes(snippet.source);
+              
+              return (
               <div key={index} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow">
-                <p className="text-sm text-gray-700 mb-3 leading-relaxed">
-                  {snippet.text}
-                </p>
+                <div className="flex items-start gap-2">
+                  <Search className="w-4 h-4 mt-1 text-blue-500 flex-shrink-0" />
+                  <p 
+                    className="text-sm text-gray-700 mb-3 leading-relaxed cursor-pointer hover:bg-blue-50 p-2 rounded transition-colors border border-transparent hover:border-blue-200 flex-1"
+                    onClick={() => {
+                      if (snippet.text) {
+                        handleSnippetClick(snippet.text, snippet);
+                      }
+                    }}
+                    title={isCurrentDoc ? "Click to find this text in the PDF" : `This snippet is from ${snippet.source} - click to auto-switch and search`}
+                  >
+                    {snippet.text}
+                  </p>
+                </div>
                 
                 <div className="flex items-center justify-between text-xs text-gray-500">
                   <span>From: {snippet.source}</span>
@@ -942,7 +1125,8 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -950,23 +1134,51 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
         {activeTab === "analysis" && (
           <div className="p-4 space-y-4">
             {laymanSummary && (
-              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <div className="p-2 bg-indigo-600 rounded-lg">
-                      <BookOpen className="w-5 h-5 text-white" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-900">Layman Summary</h3>
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6 shadow-sm hover:shadow-lg transition-all">
+                {/* Header */}
+                <div className="flex items-center space-x-3 mb-4 pb-3 border-b border-indigo-200">
+                  <div className="p-2.5 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-lg shadow-md">
+                    <BookOpen className="w-6 h-6 text-white" />
                   </div>
-                  <div className="text-xs text-gray-500">{laymanSummary.title}</div>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-gray-900 mb-0.5">Document Summary</h3>
+                    <div className="text-xs text-indigo-600 font-medium">{laymanSummary.title}</div>
+                  </div>
                 </div>
-                <p className="text-sm leading-relaxed text-gray-700 mb-3">{laymanSummary.summary}</p>
+                
+                {/* Summary Text */}
+                <div className="bg-white rounded-lg p-4 mb-4 shadow-sm border border-gray-100">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <div className="w-1 h-4 bg-indigo-600 rounded-full"></div>
+                    <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Summary</h4>
+                  </div>
+                  <div className="prose prose-sm max-w-none">
+                    {formatMarkdownText(laymanSummary.summary)}
+                  </div>
+                </div>
+                
+                {/* Key Points */}
                 {Array.isArray(laymanSummary.key_points) && laymanSummary.key_points.length > 0 && (
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
-                    {laymanSummary.key_points.map((pt, idx) => (
-                      <li key={idx}>{pt}</li>
-                    ))}
-                  </ul>
+                  <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="w-1 h-4 bg-purple-600 rounded-full"></div>
+                      <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Key Points</h4>
+                    </div>
+                    <ul className="space-y-2.5">
+                      {laymanSummary.key_points.map((pt, idx) => (
+                        <li key={idx} className="flex items-start space-x-3 group">
+                          <div className="flex-shrink-0 mt-1">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
+                              <span className="text-xs font-bold text-indigo-700">{idx + 1}</span>
+                            </div>
+                          </div>
+                          <span className="text-sm text-gray-700 leading-relaxed flex-1 pt-0.5">
+                            {pt}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             )}

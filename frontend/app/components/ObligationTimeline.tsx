@@ -458,7 +458,7 @@ export default function ObligationTimeline({
       </div>
 
       {/* Content Area */}
-      <div className="p-6">
+      <div className="p-6 max-h-[55vh] overflow-y-auto" style={{ overflowY: 'scroll' }}>
         {viewMode === "timeline" ? (
           <TimelineView
             events={data.timeline_events.filter((e) => {
@@ -507,12 +507,15 @@ function TimelineView({
     );
   }
 
-  return (
-    <div className="relative">
-      {/* Timeline line */}
-      <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+  // Debug: Log the events count
+  console.log('Timeline View rendering', events.length, 'events');
 
-      <div className="space-y-6">
+  return (
+    <div className="relative min-h-full pb-8">
+      {/* Timeline line */}
+      <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gray-200" style={{ height: '100%' }}></div>
+
+      <div className="space-y-6 relative">
         {events.map((event, index) => (
           <div key={event.id} className="relative pl-16">
             {/* Timeline dot */}
