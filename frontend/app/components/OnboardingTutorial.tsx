@@ -34,10 +34,11 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Obligation timeline extraction",
         "Interactive PDF viewer"
       ],
-      image: "🏛️"
+      image: "🏛️",
+      imageType: "emoji"
     },
     {
-      icon: <Upload className="w-12 h-12 text-blue-600" />,
+      icon: null,
       title: "Upload Your Documents",
       description: "Start by uploading your PDF documents to the workspace. You can drag and drop files or click to browse.",
       features: [
@@ -47,11 +48,12 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Secure cloud storage",
         "Quick document access"
       ],
-      image: "📄",
+      image: "/upload.gif",
+      imageType: "gif",
       tip: "Look for the document list in the left sidebar to see all your uploaded files"
     },
     {
-      icon: <FileText className="w-12 h-12 text-blue-600" />,
+      icon: null,
       title: "View & Navigate PDFs",
       description: "Use the powerful Adobe PDF viewer in the center panel to read and interact with your documents.",
       features: [
@@ -61,11 +63,12 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Search within document",
         "Bookmark important pages"
       ],
-      image: "👁️",
+      image: "/view.gif",
+      imageType: "gif",
       tip: "Click on any document in the sidebar to view it in the center panel"
     },
     {
-      icon: <Search className="w-12 h-12 text-blue-600" />,
+      icon: null,
       title: "Select Text for Instant Insights",
       description: "Highlight any text in your document to instantly get AI explanations and find related snippets across all your documents.",
       features: [
@@ -75,11 +78,12 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Relevance scoring",
         "Click-to-navigate to source"
       ],
-      image: "🔍",
+      image: "/rag.gif",
+      imageType: "gif",
       tip: "Related snippets appear in the Synapse panel on the right. Click any snippet to jump to its location!"
     },
     {
-      icon: <Sparkles className="w-12 h-12 text-blue-600" />,
+      icon: null,
       title: "Generate Document Summaries",
       description: "Click the 'Summarize' button in the Synapse panel to get an AI-generated layman's summary of your entire document.",
       features: [
@@ -89,11 +93,12 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Markdown formatting",
         "Easy to understand structure"
       ],
-      image: "✨",
+      image: "/summarizer.gif",
+      imageType: "gif",
       tip: "Summaries are saved and will reappear when you click Summarize again"
     },
     {
-      icon: <AlertCircle className="w-12 h-12 text-red-600" />,
+      icon: null,
       title: "Identify Risks Automatically",
       description: "The Risks tab automatically scans your document for potential legal risks, penalties, and problematic clauses.",
       features: [
@@ -103,11 +108,12 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Impact assessment",
         "Mitigation suggestions"
       ],
-      image: "⚠️",
+      image: "/risk.gif",
+      imageType: "gif",
       tip: "Click on any risk snippet to locate it in the source PDF"
     },
     {
-      icon: <Calendar className="w-12 h-12 text-green-600" />,
+      icon: null,
       title: "Extract Obligations & Deadlines",
       description: "Click the 'Timeline' button to automatically extract all obligations, deadlines, and responsibilities from your contract.",
       features: [
@@ -117,11 +123,12 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Responsible party identification",
         "Export to Google Calendar or ICS"
       ],
-      image: "📅",
+      image: "/obligation.gif",
+      imageType: "gif",
       tip: "Switch between Timeline View and List View to see obligations in different formats"
     },
     {
-      icon: <MessageSquare className="w-12 h-12 text-purple-600" />,
+      icon: null,
       title: "Chat with Your Documents",
       description: "Use the Chat tab to ask questions about your documents and get instant AI-powered answers.",
       features: [
@@ -131,7 +138,8 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Multi-document knowledge",
         "Conversation history"
       ],
-      image: "💬",
+      image: "/chat.gif",
+      imageType: "gif",
       tip: "Try asking: 'What are the payment terms?' or 'Who is responsible for maintenance?'"
     },
     {
@@ -147,6 +155,7 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
         "Ask questions in Chat"
       ],
       image: "🎉",
+      imageType: "emoji",
       tip: "Press Ctrl+K anytime to access quick actions and shortcuts"
     }
   ];
@@ -214,20 +223,30 @@ export default function OnboardingTutorial({ onClose }: OnboardingTutorialProps)
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 pb-6">
-          <div className="max-w-6xl mx-auto">
-            {/* Two Column Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left Side - Visual/Screenshot */}
-              <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-8 border border-gray-200">
-                <div className="mb-4 p-4 bg-white rounded-2xl shadow-md">
-                  {slide.icon}
-                </div>
-                <div className="text-8xl mb-6">{slide.image}</div>
+          <div className="max-w-7xl mx-auto">
+            {/* Two Column Layout - 60/40 split */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+              {/* Left Side - Visual/Screenshot (60%) */}
+              <div className="lg:col-span-3 flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-8 border border-gray-200">
+                {slide.icon && (
+                  <div className="mb-4 p-4 bg-white rounded-2xl shadow-md">
+                    {slide.icon}
+                  </div>
+                )}
+                {slide.imageType === "gif" ? (
+                  <img 
+                    src={slide.image} 
+                    alt={slide.title}
+                    className="w-full rounded-xl shadow-2xl mb-6"
+                  />
+                ) : (
+                  <div className="text-9xl mb-6">{slide.image}</div>
+                )}
                 <h3 className="text-2xl font-bold text-gray-900 text-center">{slide.title}</h3>
               </div>
 
-              {/* Right Side - Content */}
-              <div className="flex flex-col justify-center space-y-6">
+              {/* Right Side - Content (40%) */}
+              <div className="lg:col-span-2 flex flex-col justify-center space-y-6">
                 {/* Description */}
                 <div>
                   <p className="text-base text-gray-700 leading-relaxed">
