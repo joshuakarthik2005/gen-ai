@@ -54,6 +54,9 @@ interface RiskFinding {
   severity: RiskSeverity;
   snippet: string;
   keyword: string;
+  explanation?: string;
+  impact?: string;
+  mitigation?: string;
 }
 
 interface ChatMessage {
@@ -151,7 +154,46 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   };
 
   // Heuristic risk detector: scans text for common risky clauses
-  const detectRisks = (text: string): RiskFinding[] => {
+  const detectRisks = async (text: string): Promise<RiskFinding[]> => {
+    if (!text) return [];
+    
+    try {
+      // Call AI-powered risk analysis endpoint
+      const authHeaders = await withAuthHeaders({ 'Content-Type': 'application/json' });
+      const response = await fetch(getApiUrl('/analyze-risks'), {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Risk analysis failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // Transform AI response to RiskFinding format
+      const risks: RiskFinding[] = (data.risks || []).map((risk: any, index: number) => ({
+        id: `risk-${index}-${Date.now()}`,
+        type: risk.type || 'Unknown Risk',
+        severity: (risk.severity?.toLowerCase() || 'medium') as RiskSeverity,
+        snippet: risk.snippet || '',
+        keyword: risk.type || '',
+        explanation: risk.explanation || '',
+        impact: risk.impact || '',
+        mitigation: risk.mitigation || ''
+      }));
+
+      return risks;
+    } catch (error) {
+      console.error('AI risk analysis failed, using fallback:', error);
+      // Fallback to basic pattern matching if AI fails
+      return detectRisksFallback(text);
+    }
+  };
+
+  // Fallback regex-based risk detection
+  const detectRisksFallback = (text: string): RiskFinding[] => {
     if (!text) return [];
     const patterns: Array<{ type: string; severity: RiskSeverity; regex: RegExp[] }> = [
       {
@@ -185,7 +227,7 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
     ];
 
     const findings: RiskFinding[] = [];
-    const lower = text; // keep original casing for snippets
+    const lower = text;
 
     const addFinding = (type: string, severity: RiskSeverity, keyword: string, index: number) => {
       const start = Math.max(0, index - 80);
@@ -200,20 +242,18 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
         const re = new RegExp(r.source, r.flags.includes('g') ? r.flags : r.flags + 'g');
         while ((m = re.exec(lower)) !== null) {
           addFinding(p.type, p.severity, m[0], m.index);
-          // avoid infinite loops on zero-width matches
           if (m.index === re.lastIndex) re.lastIndex++;
         }
       }
     }
 
-    // De-duplicate by overlapping ranges/type
     const unique: RiskFinding[] = [];
     const seen = new Set<string>();
     for (const f of findings) {
       const key = `${f.type}:${f.keyword}:${f.snippet.slice(0,60)}`;
       if (!seen.has(key)) { seen.add(key); unique.push(f); }
     }
-    return unique.slice(0, 50); // cap to reasonable number
+    return unique.slice(0, 50);
   };
 
   const summarizeDocument = async () => {
@@ -364,13 +404,18 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
       const fullText = data.text || '';
       setDocumentText(fullText);
       // Kick off risk scanning
-      try {
-        setIsScanningRisks(true);
-        const risks = detectRisks(fullText);
-        setRiskFindings(risks);
-      } finally {
-        setIsScanningRisks(false);
-      }
+      (async () => {
+        try {
+          setIsScanningRisks(true);
+          const risks = await detectRisks(fullText);
+          setRiskFindings(risks);
+        } catch (error) {
+          console.error('Risk detection error:', error);
+          setRiskFindings([]);
+        } finally {
+          setIsScanningRisks(false);
+        }
+      })();
     } catch (error) {
       console.error('Error extracting document text:', error);
       // Set minimal context if extraction fails

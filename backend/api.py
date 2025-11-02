@@ -1744,6 +1744,108 @@ async def summarize_document_endpoint(file: UploadFile = File(...), current_user
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
+@app.post("/analyze-risks")
+async def analyze_risks_endpoint(request: Dict[str, str], current_user: User = Depends(require_auth)):
+    """
+    AI-powered comprehensive risk analysis of legal document text (requires authentication)
+    Returns detailed risk findings with severity, context, and mitigation suggestions
+    
+    - **text**: The legal document text to analyze for risks
+    """
+    try:
+        legal_text = request.get("text", "").strip()
+        
+        if not legal_text:
+            raise HTTPException(status_code=400, detail="No text provided")
+        
+        if len(legal_text) > 50000:
+            legal_text = legal_text[:50000]
+            logger.warning("Text truncated to 50,000 characters for risk analysis")
+        
+        # Initialize Vertex AI if not already done
+        global vertex_ai_initialized, model
+        if not vertex_ai_initialized:
+            initialize_vertex_ai()
+        
+        if not model:
+            raise HTTPException(status_code=503, detail="AI model not available")
+        
+        # Create comprehensive risk analysis prompt
+        prompt = f"""You are an expert legal risk analyst. Analyze this legal document and identify ALL potential risks, unfavorable terms, and red flags.
+
+For each risk you find, provide:
+1. **Risk Type**: Category of the risk (e.g., "Unlimited Liability", "Auto-Renewal", "Unfair Termination", "Hidden Fees", etc.)
+2. **Severity**: HIGH, MEDIUM, or LOW
+3. **Snippet**: The exact text from the document that poses the risk (quote it directly)
+4. **Explanation**: Clear explanation of why this is risky
+5. **Impact**: What could go wrong if this risk materializes
+6. **Mitigation**: Suggested actions to reduce the risk
+
+Format your response as a JSON array of risk objects. Be thorough - identify every risk, no matter how small.
+
+Example format:
+```json
+[
+  {{
+    "type": "Unlimited Personal Liability",
+    "severity": "HIGH",
+    "snippet": "the employee shall be personally liable for any and all damages",
+    "explanation": "This clause makes you personally responsible for damages with no cap",
+    "impact": "You could lose personal assets if something goes wrong",
+    "mitigation": "Negotiate for a liability cap or limited liability clause"
+  }}
+]
+```
+
+Document to analyze:
+{legal_text}
+
+Provide ONLY the JSON array, no other text."""
+
+        try:
+            response = model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up the response to extract JSON
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+            
+            # Parse JSON response
+            import json
+            try:
+                risks = json.loads(response_text)
+                if not isinstance(risks, list):
+                    risks = []
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse AI response as JSON: {response_text[:200]}")
+                risks = []
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "risks": risks,
+                    "total_risks": len(risks),
+                    "model_used": "gemini-2.0-flash",
+                    "character_count": len(legal_text)
+                }
+            )
+            
+        except Exception as ai_error:
+            logger.error(f"AI generation error: {str(ai_error)}")
+            raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(ai_error)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze_risks_endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
 @app.post("/explain-selection")
 async def explain_selection(request: ExplainSelectionRequest, current_user: User = Depends(require_auth)):
     """

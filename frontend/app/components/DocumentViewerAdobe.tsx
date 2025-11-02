@@ -9,7 +9,7 @@ import { withAuthHeaders } from "../utils/auth";
 // Adobe PDF Embed API Configuration
 // Now uses environment variable to support multiple environments/machines
 // Set NEXT_PUBLIC_ADOBE_CLIENT_ID in .env.local
-const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "e3b008974ccc4ac5aacabe3252c01c67";
+const ADOBE_API_KEY = process.env.NEXT_PUBLIC_ADOBE_CLIENT_ID || "42dca80537eb431cad94af71101d769d";
 
 // Debug logging for troubleshooting (will show in browser console)
 if (typeof window !== 'undefined') {
