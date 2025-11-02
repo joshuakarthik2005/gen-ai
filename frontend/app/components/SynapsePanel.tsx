@@ -13,7 +13,8 @@ import {
   FileText,
   AlertCircle,
   CheckCircle,
-  Brain
+  Brain,
+  Calendar
 } from "lucide-react";
 
 interface SynapsePanelProps {
@@ -64,6 +65,7 @@ interface ChatMessage {
 
 import { API_CONFIG, getApiUrl } from "../config/api";
 import { withAuthHeaders } from "../utils/auth";
+import ObligationTimeline from "./ObligationTimeline";
 
 // Normalize any document URL to an absolute backend URL that the server can access.
 // - If we receive a local relative path like "/api/proxy-gcs/<bucket>/<path>",
@@ -101,6 +103,9 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
   
   // Search scope state: "all" (all user docs) or "current" (current doc only)
   const [searchScope, setSearchScope] = useState<"all" | "current">("all");
+  
+  // Timeline state
+  const [showTimeline, setShowTimeline] = useState(false);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -665,24 +670,37 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
             <Sparkles className="w-5 h-5 text-blue-600" />
             <h2 className="text-lg font-semibold text-gray-900">Synapse</h2>
           </div>
-          <button
-            onClick={summarizeDocument}
-            disabled={isSummarizing}
-            className={`inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm border ${isSummarizing ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'}`}
-            title="Generate a layman-friendly summary"
-          >
-            {isSummarizing ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin mr-2"></span>
-                Summarizing
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 mr-1.5" />
-                Summarize
-              </>
-            )}
-          </button>
+          <div className="flex items-center space-x-2">
+            {/* Timeline button */}
+            <button
+              onClick={() => setShowTimeline(true)}
+              disabled={!documentText}
+              className={`inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm border ${!documentText ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'}`}
+              title="View obligations and deadlines timeline"
+            >
+              <Calendar className="w-4 h-4 mr-1.5" />
+              Timeline
+            </button>
+            {/* Summarize button */}
+            <button
+              onClick={summarizeDocument}
+              disabled={isSummarizing}
+              className={`inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm border ${isSummarizing ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'}`}
+              title="Generate a layman-friendly summary"
+            >
+              {isSummarizing ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin mr-2"></span>
+                  Summarizing
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-1.5" />
+                  Summarize
+                </>
+              )}
+            </button>
+          </div>
         </div>
         
         {/* Tab Navigation */}
@@ -1030,6 +1048,19 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery }: 
           </div>
         )}
       </div>
+      
+      {/* Obligation Timeline Modal */}
+      {showTimeline && documentText && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-6xl max-h-[90vh] overflow-auto">
+            <ObligationTimeline
+              documentText={documentText}
+              documentName={filename}
+              onClose={() => setShowTimeline(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

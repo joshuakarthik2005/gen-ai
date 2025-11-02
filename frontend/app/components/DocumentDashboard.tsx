@@ -5,7 +5,8 @@ import Header from "./Header";
 import DocumentViewer from "./DocumentViewerAdobe";
 import AnalysisPanel from "./AnalysisPanel";
 import ChatInterface from "./ChatInterface";
-import { Sparkles } from "lucide-react";
+import ObligationTimeline from "./ObligationTimeline";
+import { Sparkles, Calendar } from "lucide-react";
 import { API_CONFIG, getApiUrl } from "../config/api";
 
 // No local API route; we call the backend directly via API_CONFIG
@@ -26,6 +27,8 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
     key_points: string[];
   } | null>(null);
   const [summarizeError, setSummarizeError] = useState<string | null>(null);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [documentText, setDocumentText] = useState<string>("");
 
   const handleExplainText = (text: string) => {
     setExplainedText(text);
@@ -77,6 +80,12 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
         const structuredAnalysis = parseAnalysisResponse(analysisData.analysis, filename);
         
         setDocumentAnalysis(structuredAnalysis);
+        
+        // Extract document text for timeline feature
+        if (analysisData.extracted_text) {
+          setDocumentText(analysisData.extracted_text);
+        }
+        
         setIsAnalyzing(false);
         
       } catch (error) {
@@ -307,6 +316,16 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
               <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl">
                 <h2 className="text-lg font-semibold text-gray-800">AI Analysis</h2>
                 <div className="flex items-center space-x-2">
+                  {/* Timeline button */}
+                  <button
+                    onClick={() => setShowTimeline(true)}
+                    disabled={!documentText || isAnalyzing}
+                    className={`inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm border ${!documentText || isAnalyzing ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'}`}
+                    title="View obligations and deadlines timeline"
+                  >
+                    <Calendar className="w-4 h-4 mr-1.5" />
+                    Timeline
+                  </button>
                   {/* Summarize button */}
                   <button
                     onClick={summarizeDocument}
@@ -371,6 +390,19 @@ export default function DocumentDashboard({ documentUrl, filename }: DocumentDas
           </div>
         </div>
       </div>
+
+      {/* Obligation Timeline Modal */}
+      {showTimeline && documentText && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-6xl max-h-[90vh] overflow-auto">
+            <ObligationTimeline
+              documentText={documentText}
+              documentName={filename}
+              onClose={() => setShowTimeline(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

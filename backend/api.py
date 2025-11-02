@@ -120,6 +120,11 @@ class RAGTestCustomRequest(BaseModel):
 class DeleteDocumentRequest(BaseModel):
     blob_name: str
 
+class ExtractObligationsRequest(BaseModel):
+    document_text: str
+    document_id: Optional[str] = None
+    document_name: Optional[str] = "Document"
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Legal Document Demystifier",
@@ -2542,6 +2547,52 @@ async def proxy_gcs_file(bucket_name: str, file_path: str, current_user: dict = 
     except Exception as e:
         logger.error(f"Error proxying GCS file {file_path}: {e}")
         raise HTTPException(status_code=500, detail=f"Error accessing file: {str(e)}")
+
+
+@app.post("/extract-obligations")
+async def extract_obligations_endpoint(
+    request: ExtractObligationsRequest,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """
+    Extract obligations, deadlines, and key dates from a legal document
+    
+    This endpoint analyzes document text to identify:
+    - All contractual obligations and requirements
+    - Deadlines (absolute dates, relative timelines, recurring)
+    - Responsible parties
+    - Consequences of non-compliance
+    - Priority levels
+    
+    Returns a timeline-ready structure for visualization
+    """
+    try:
+        # Initialize Vertex AI if needed
+        initialize_vertex_ai()
+        
+        # Import obligation tracker
+        from obligation_tracker import ObligationExtractor
+        
+        # Create extractor with Gemini model
+        extractor = ObligationExtractor(model=model)
+        
+        # Extract obligations
+        result = await extractor.extract_obligations(
+            document_text=request.document_text,
+            document_id=request.document_id,
+            document_name=request.document_name
+        )
+        
+        logger.info(f"Successfully extracted {result['summary']['total']} obligations from document")
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        logger.error(f"Failed to extract obligations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to extract obligations: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
