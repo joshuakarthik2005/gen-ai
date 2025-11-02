@@ -76,9 +76,31 @@ export default function ObligationTimeline({
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
 
+  // Generate a cache key based on document content (first 100 chars as fingerprint)
+  const getCacheKey = () => {
+    const fingerprint = documentText.substring(0, 100).replace(/\s+/g, '');
+    return `obligations_${documentName}_${fingerprint}`;
+  };
+
   useEffect(() => {
     if (documentText) {
-      extractObligations();
+      // Check cache first
+      const cacheKey = getCacheKey();
+      const cached = localStorage.getItem(cacheKey);
+      
+      if (cached) {
+        try {
+          const cachedData = JSON.parse(cached);
+          console.log('Using cached obligations data');
+          setData(cachedData);
+          setLoading(false);
+        } catch (err) {
+          console.error('Failed to parse cached data:', err);
+          extractObligations();
+        }
+      } else {
+        extractObligations();
+      }
     }
   }, [documentText]);
 
@@ -114,6 +136,15 @@ export default function ObligationTimeline({
 
       const result = await response.json();
       setData(result);
+      
+      // Cache the result
+      const cacheKey = getCacheKey();
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(result));
+        console.log('Cached obligations data for future use');
+      } catch (err) {
+        console.error('Failed to cache obligations:', err);
+      }
     } catch (err: any) {
       console.error("Failed to extract obligations:", err);
       setError(err.message || "Failed to extract obligations");
@@ -192,7 +223,38 @@ export default function ObligationTimeline({
   const exportToCalendar = () => {
     if (!data) return;
 
-    // Generate ICS file format
+    // Create Google Calendar links for each event
+    const googleCalendarUrls = data.timeline_events.map((event) => {
+      // Format date for Google Calendar URL (YYYYMMDD)
+      const dateStr = event.date.replace(/-/g, "");
+      
+      // Construct Google Calendar URL
+      const params = new URLSearchParams({
+        action: "TEMPLATE",
+        text: event.title,
+        dates: `${dateStr}/${dateStr}`,
+        details: `${event.description}\n\nResponsible: ${event.responsible_party}\nPriority: ${event.priority}\nConsequences: ${event.consequences}`,
+        location: "",
+      });
+
+      return `https://calendar.google.com/calendar/render?${params.toString()}`;
+    });
+
+    // Open Google Calendar for each event in new tabs
+    if (confirm(`This will open ${googleCalendarUrls.length} tabs to add events to your Google Calendar. Continue?`)) {
+      googleCalendarUrls.forEach((url, index) => {
+        // Stagger the opening to avoid popup blocking
+        setTimeout(() => {
+          window.open(url, `_blank_${index}`);
+        }, index * 300);
+      });
+    }
+  };
+
+  const exportToICS = () => {
+    if (!data) return;
+
+    // Generate ICS file format as fallback
     let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Legal Demystifier//EN\n";
 
     data.timeline_events.forEach((event) => {
@@ -287,10 +349,19 @@ export default function ObligationTimeline({
           <div className="flex items-center gap-2">
             <button
               onClick={exportToCalendar}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+              title="Add events directly to Google Calendar"
+            >
+              <Calendar className="w-4 h-4" />
+              Add to Google Calendar
+            </button>
+            <button
+              onClick={exportToICS}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              title="Download ICS file for any calendar app"
             >
               <Download className="w-4 h-4" />
-              Export to Calendar
+              Download ICS File
             </button>
             {onClose && (
               <button
