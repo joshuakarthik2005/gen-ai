@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!upstream.ok) {
+      console.error(`[proxy-pdf] Upstream error: ${upstream.status} for ${target.toString()}`);
       return new Response(`Upstream error: ${upstream.status}`, { status: upstream.status });
     }
 
@@ -91,6 +92,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    return new Response("Failed to fetch target URL", { status: 502 });
+    console.error('[proxy-pdf] Fetch error:', err);
+    return new Response(`Failed to fetch target URL: ${err instanceof Error ? err.message : 'Unknown error'}`, { status: 502 });
   }
 }

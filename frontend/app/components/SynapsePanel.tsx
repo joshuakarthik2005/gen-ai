@@ -773,7 +773,13 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery, on
       // Switch to snippets tab to show results
       setActiveTab('snippets');
       
-    } catch (error) {
+    } catch (error: any) {
+      // Silently ignore abort errors - these are intentional cancellations
+      if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+        console.debug('[RAG] Request aborted (intentional)');
+        return;
+      }
+      
       console.error('RAG search error:', error);
       setRagSearchError((error as Error).message || 'Failed to search related documents');
       // Ensure no stale snippets are displayed upon error
@@ -850,6 +856,16 @@ const SynapsePanel = ({ explainedText, documentUrl, filename, ragSearchQuery, on
       performRAGSearch(trimmed);
     };
     run();
+    
+    // Cleanup: abort any pending RAG requests when effect re-runs or component unmounts
+    return () => {
+      try {
+        ragAbortRef.current?.abort();
+        ragAbortRef.current = null;
+      } catch {
+        // Ignore abort errors during cleanup
+      }
+    };
   }, [explainedText, ragSearchQuery]);
 
   const getTypeIcon = (type: string) => {
