@@ -14,6 +14,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import re
 from google.cloud import aiplatform
 from google.cloud import discoveryengine
 from google.oauth2 import service_account
@@ -145,52 +146,142 @@ def analyze_legal_document(legal_text: str) -> Dict[str, Any]:
     
     # Initialize Vertex AI if not already done
     if not vertex_ai_initialized:
-        if not initialize_vertex_ai():
-            # Return a mock response for testing
+        initialize_vertex_ai()
+
+    # If Vertex AI isn't available or not configured, fall back to a local heuristic analyzer
+    def _local_analyze(text: str) -> Dict[str, Any]:
+        """Produce a simple, local analysis of legal text without calling external APIs.
+
+        This heuristic-based analyzer creates:
+        - a one-paragraph summary (first 1-2 sentences)
+        - up to 3 important clauses with short explanations and risks
+        """
+        try:
+            # Normalize whitespace
+            t = re.sub(r"\s+", " ", text.strip())
+
+            # Split into sentences (simple heuristic)
+            sentences = re.split(r'(?<=[\\.!?])\\s+', t)
+            sentences = [s.strip() for s in sentences if s.strip()]
+
+            # Build a lightweight summary: use the first 1-2 sentences if available
+            if len(sentences) >= 2:
+                summary = sentences[0]
+                # If the first sentence is very short, include the second
+                if len(summary.split()) < 12:
+                    summary = summary + ' ' + sentences[1]
+            elif len(sentences) == 1:
+                summary = sentences[0]
+            else:
+                summary = (t[:300] + '...') if len(t) > 300 else t
+
+            # Identify candidate clauses by keyword heuristics
+            keywords = [
+                'shall', 'must', 'agree', 'agrees', 'oblig', 'indemn', 'warrant',
+                'liabil', 'terminate', 'termination', 'compens', 'liable', 'responsib',
+                'confidential', 'non-compete', 'noncompete', 'arbitration', 'governing law'
+            ]
+
+            candidates = []
+            for s in sentences:
+                s_lower = s.lower()
+                kw_count = sum(1 for kw in keywords if kw in s_lower)
+                # Score by number of keywords and sentence length
+                score = kw_count * 10 + len(s)
+                if kw_count > 0 or len(s.split()) > 20:
+                    candidates.append((score, s, kw_count))
+
+            # If no candidates found, fall back to longer sentences
+            if not candidates:
+                for s in sentences:
+                    candidates.append((len(s), s, 0))
+
+            # Sort and pick top 3 unique clauses
+            candidates.sort(reverse=True, key=lambda x: x[0])
+            seen = set()
+            top_clauses = []
+            for _, s, kwc in candidates:
+                norm = s.lower()
+                if norm in seen:
+                    continue
+                seen.add(norm)
+                top_clauses.append((s, kwc))
+                if len(top_clauses) >= 3:
+                    break
+
+            # Compose explanations and risks for each clause heuristically
+            clause_explanations = []
+            for clause, kwc in top_clauses:
+                expl = []
+                risks = []
+                cl_lower = clause.lower()
+
+                # Basic interpretation
+                if 'indemn' in cl_lower or 'liable' in cl_lower or 'liabil' in cl_lower:
+                    expl.append('This clause allocates financial responsibility and may require one party to compensate another for losses or claims.')
+                    risks.append('Potentially significant financial exposure or legal liability for the indemnifying party.')
+                if 'terminate' in cl_lower or 'termination' in cl_lower or 'notice' in cl_lower:
+                    expl.append('This clause sets out termination rights and notice periods.')
+                    risks.append('Risk of sudden termination or short notice periods that could disrupt obligations.')
+                if 'confidential' in cl_lower or 'non-disclos' in cl_lower:
+                    expl.append('This clause imposes confidentiality obligations.')
+                    risks.append('Limitations on sharing information; potential breach liability for improper disclosure.')
+                if 'non-compete' in cl_lower or 'noncompete' in cl_lower:
+                    expl.append('This clause restricts future work or competition.')
+                    risks.append('May limit employment or business opportunities after the agreement ends.')
+                if 'arbitration' in cl_lower or 'governing law' in cl_lower or 'jurisdiction' in cl_lower:
+                    expl.append('This clause determines dispute resolution and applicable law.')
+                    risks.append('May require arbitration (which can limit court remedies) or put disputes in a distant jurisdiction.')
+                if not expl:
+                    # Generic explanation for clauses without matched keywords
+                    expl.append('This clause establishes rights or obligations between the parties and uses standard contractual language.')
+                    if kwc > 0:
+                        risks.append('Contains terms that create obligations; review carefully to understand who bears responsibility.')
+                    else:
+                        risks.append('May contain important legal definitions or operational details.')
+
+                clause_explanations.append({
+                    'clause_text': clause,
+                    'explanation': ' '.join(expl),
+                    'risks': risks
+                })
+
+            # Build final analysis string
+            lines = []
+            lines.append('**Legal Document Analysis (Local Heuristic Mode)**')
+            lines.append('')
+            lines.append('**Summary:** ' + summary)
+            lines.append('')
+            lines.append('**Key Points to Understand:**')
+            for i, ce in enumerate(clause_explanations, start=1):
+                lines.append(f"{i}. **Clause excerpt:** {ce['clause_text']}")
+                lines.append(f"   **Explanation:** {ce['explanation']}")
+                if ce['risks']:
+                    for r in ce['risks']:
+                        lines.append(f"   - {r}")
+                lines.append('')
+
+            analysis_text = '\n'.join(lines).strip()
+
             return {
-                "success": True,
-                "analysis": "**DEMO MODE** - AI service temporarily unavailable. This legal document analysis would normally provide: 1) A simplified summary of the document in plain English, 2) Key clauses and their implications, 3) Important obligations and risks to be aware of. Please check back later when the AI service is fully operational.",
-                "model_used": "demo-mode"
+                'success': True,
+                'analysis': analysis_text,
+                'model_used': 'local-heuristic'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Local analysis failed: {e}'
             }
     
-    try:
-        # For now, let's create a basic analysis using the text
-        # In a real implementation, we would call Vertex AI here
-        prompt = create_legal_analysis_prompt(legal_text)
-        
-        # For now, return a basic analysis
-        # TODO: Implement actual Vertex AI call
-        basic_analysis = f"""
-**Legal Document Analysis**
-
-**Summary:** This appears to be an indemnification clause, which is a common provision in legal agreements where one party agrees to protect another from certain types of legal and financial risks.
-
-**Key Points to Understand:**
-1. **Indemnification Obligation**: The "party of the first part" is taking on financial responsibility for any claims, damages, losses, or expenses that might arise.
-2. **Scope of Protection**: The protection covers issues "arising from or relating to the performance of this agreement."
-3. **Risk Transfer**: This clause essentially transfers certain risks from one party to another.
-
-**Important Considerations:**
-- This creates a significant financial obligation for the indemnifying party
-- The scope is quite broad ("any and all claims")
-- You should understand what activities or situations could trigger this obligation
-- Consider whether the risks being assumed are reasonable given the circumstances
-
-**Recommendation:** Have a legal professional review the full agreement to understand the complete context and implications of this clause.
-        """
-        
+    # If Vertex AI is available, you could call it here. For now, always return local analysis
+    local_result = _local_analyze(legal_text)
+    if local_result.get('success'):
+        return local_result
+    else:
         return {
-            "success": True,
-            "analysis": basic_analysis.strip(),
-            "model_used": "basic-analysis"
-        }
-        
-    except Exception as e:
-        error_msg = f"Error analyzing document: {str(e)}"
-        logger.error(error_msg)
-        return {
-            "success": False,
-            "error": error_msg
+            'success': False,
+            'error': local_result.get('error', 'Unknown error in analysis')
         }
 
 
@@ -779,39 +870,29 @@ async def explain_selection_endpoint(request: ExplainSelectionRequest):
             selected_text = selected_text[:2000]
             logger.warning("Selected text truncated to 2,000 characters")
         
-        # Create a focused explanation prompt
-        explanation_prompt = f"""You are an expert legal advisor. A user has highlighted this text from a legal document and wants a clear explanation:
-
-"{selected_text}"
-
-Please provide:
-1. A simple explanation of what this text means in plain English
-2. Any important implications or obligations it creates
-3. Any potential risks or benefits for the person reading it
-
-Keep your explanation concise, clear, and focused on what the reader needs to know."""
+        # Use the same local analyzer to provide a real explanation
+        analysis_result = analyze_legal_document(selected_text)
         
-        # For now, return a basic explanation since we're focusing on frontend integration
-        # In production, this would use Vertex AI
-        explanation = f"""This selected text appears to be a legal clause or provision. Here's what it means:
+        if analysis_result.get("success"):
+            # Format the analysis as an explanation
+            explanation = analysis_result["analysis"]
+        else:
+            # Fallback if analysis fails
+            explanation = f"""**Error analyzing selection**
 
-**Plain English Explanation:**
-{selected_text[:200]}... - This text establishes certain terms or conditions that parties must follow.
+An error occurred while analyzing this text: {analysis_result.get('error', 'Unknown error')}
 
-**Key Points:**
-• This creates specific obligations or rights
-• It may affect your responsibilities under this agreement
-• Consider consulting a lawyer for personalized advice
+**Selected text:** {selected_text[:300]}{'...' if len(selected_text) > 300 else ''}
 
-**Recommendation:**
-Pay careful attention to this clause as it may have important legal implications for your situation."""
+Please try again or contact support if the issue persists."""
         
         return JSONResponse(
             status_code=200,
             content={
                 "explanation": explanation,
                 "selected_text": selected_text,
-                "character_count": len(selected_text)
+                "character_count": len(selected_text),
+                "model_used": analysis_result.get("model_used", "unknown")
             }
         )
         
