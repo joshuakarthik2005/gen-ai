@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Bot, User } from "lucide-react";
 import { BASE_URL } from "../config/api";
+import { markdownToHtml } from "../utils/markdown";
 
 interface Message {
   id: string;
@@ -199,9 +200,14 @@ export default function ChatInterface({ explainedText, documentUrl }: ChatInterf
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {message.content}
-                </p>
+                <div 
+                  className="text-sm leading-relaxed prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ 
+                    __html: message.type === 'assistant' 
+                      ? markdownToHtml(message.content)
+                      : message.content 
+                  }}
+                />
                 <p className={`text-xs mt-1 opacity-75 ${
                   message.type === 'user' ? 'text-blue-200' : 'text-gray-500'
                 }`}>
